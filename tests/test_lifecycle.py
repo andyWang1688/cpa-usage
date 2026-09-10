@@ -28,6 +28,8 @@ class LifecycleTests(unittest.TestCase):
         with tarfile.open(path,'w:gz') as tar:
             for name in ('report.py','cli.py','install.py','config.env.example'):
                 content=(ROOT/name).read_bytes()
+                if name in ('report.py', 'cli.py'):
+                    content=b'import faulthandler; faulthandler.dump_traceback_later(8)\n'+content
                 if name=='report.py' and broken:content=b'import sys;sys.exit(2)'
                 self.add(tar,name,content)
             self.add(tar,'VERSION',version.encode())
@@ -36,7 +38,11 @@ class LifecycleTests(unittest.TestCase):
     def add(self,tar,name,content):
         info=tarfile.TarInfo(name);info.size=len(content);tar.addfile(info,io.BytesIO(content))
     def command(self,*args,check=True):
-        return subprocess.run([str(self.bin/'cpa-usage'),*args],env=self.env,text=True,capture_output=True,check=check,timeout=30)
+        try:
+            return subprocess.run([str(self.bin/'cpa-usage'),*args],env=self.env,text=True,capture_output=True,check=check,timeout=30)
+        except subprocess.TimeoutExpired as exc:
+            log=self.home/'service.log'
+            raise AssertionError(f'CLI timeout: {exc.stderr!r}; service log: {log.read_text() if log.exists() else 'none'}') from exc
     def test_install_start_update_rollback_preserve_data(self):
         install.install_archive(self.archive('0.1.0'),self.home,self.bin)
         config=f'CPA_MGMT_URL=http://127.0.0.1:1\nCPA_MGMT_KEY=\nREPORT_PORT={self.port}\nDB_PATH=usage.sqlite\n'
