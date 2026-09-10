@@ -17,6 +17,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 from urllib.request import Request, urlopen
 
+class LocalHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # This service is loopback-only; startup must not depend on reverse DNS.
+        from socketserver import TCPServer
+        TCPServer.server_bind(self)
+        self.server_name = 'localhost'
+        self.server_port = self.server_address[1]
+
+
 BASE = Path(__file__).resolve().parent
 HOME = Path(os.environ.get('CPA_USAGE_HOME', Path.home() / '.local/share/cpa-usage')).expanduser().resolve()
 VERSION = (BASE / 'VERSION').read_text().strip()
@@ -243,7 +252,7 @@ def main():
     with (HOME / 'service.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         env = load_env()
-        server = ThreadingHTTPServer(('127.0.0.1', int(env['REPORT_PORT'])), Handler)
+        server = LocalHTTPServer(('127.0.0.1', int(env['REPORT_PORT'])), Handler)
         server.env = env
         with connect_db(env):
             pass

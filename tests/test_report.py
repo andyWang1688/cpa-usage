@@ -55,12 +55,17 @@ class ReportTests(unittest.TestCase):
         data=report.usage(self.env,'2026-01-01','2026-01-01','day')
         self.assertEqual(data['events'],[])
         self.assertEqual(data['skipped'],1)
+    def test_loopback_start_does_not_require_reverse_dns(self):
+        with patch('socket.getfqdn', side_effect=AssertionError('Unexpected reverse DNS during local bind')):
+            server = report.LocalHTTPServer(('127.0.0.1', 0), report.Handler)
+            server.server_close()
+
     def test_http_assets_and_local_only(self):
         base=Path(self.tmp.name); (base/'dist/assets').mkdir(parents=True)
         (base/'dist/index.html').write_text('<html>fixture</html>')
         (base/'dist/assets/test.js').write_text('console.log(1)')
         with patch('report.BASE',base):
-            server=ThreadingHTTPServer(('127.0.0.1',0),report.Handler); server.env=self.env
+            server=report.LocalHTTPServer(('127.0.0.1',0),report.Handler); server.env=self.env
             thread=threading.Thread(target=server.serve_forever,daemon=True); thread.start()
             url=f'http://127.0.0.1:{server.server_port}'
             try:

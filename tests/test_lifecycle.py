@@ -28,8 +28,6 @@ class LifecycleTests(unittest.TestCase):
         with tarfile.open(path,'w:gz') as tar:
             for name in ('report.py','cli.py','install.py','config.env.example'):
                 content=(ROOT/name).read_bytes()
-                if name in ('report.py', 'cli.py'):
-                    content=b'import faulthandler; faulthandler.dump_traceback_later(8)\n'+content
                 if name=='report.py' and broken:content=b'import sys;sys.exit(2)'
                 self.add(tar,name,content)
             self.add(tar,'VERSION',version.encode())

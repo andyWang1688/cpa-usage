@@ -59,7 +59,7 @@ def install_archive(archive, home, bin_dir):
         # Isolated runtime, created once; no pip, npm or network needed at runtime.
         python = home / 'venv/bin/python'
         if not python.exists():
-            subprocess.run([sys.executable, '-m', 'venv', str(home / 'venv')], check=True)
+            subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(home / 'venv')], check=True)
         shutil.copytree(stage, dest)
     config = home / 'config.env'
     if not config.exists():
