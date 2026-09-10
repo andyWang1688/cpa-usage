@@ -42,7 +42,7 @@ class LifecycleTests(unittest.TestCase):
             return subprocess.run([str(self.bin/'cpa-usage'),*args],env=self.env,text=True,capture_output=True,check=check,timeout=30)
         except subprocess.TimeoutExpired as exc:
             log=self.home/'service.log'
-            raise AssertionError(f'CLI timeout: {exc.stderr!r}; service log: {log.read_text() if log.exists() else 'none'}') from exc
+            raise AssertionError(f"CLI timeout: {exc.stderr!r}; service log: {log.read_text() if log.exists() else 'none'}") from exc
     def test_install_start_update_rollback_preserve_data(self):
         install.install_archive(self.archive('0.1.0'),self.home,self.bin)
         config=f'CPA_MGMT_URL=http://127.0.0.1:1\nCPA_MGMT_KEY=\nREPORT_PORT={self.port}\nDB_PATH=usage.sqlite\n'
