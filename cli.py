@@ -13,7 +13,7 @@ import time
 from urllib.request import urlopen
 from urllib.parse import urlparse
 from report import HOME, VERSION, load_env
-from install import fetch_release, install_archive, switch
+from install import fetch_release, install_archive, migrate_home, switch, write_launcher
 
 PID = HOME / 'service.pid'
 LOG = HOME / 'service.log'
@@ -120,9 +120,34 @@ def update(version):
         print(f'Updated to {target_version}; configuration and database preserved')
 
 
+def migrate():
+    target = (Path.home() / '.cpa-usage').resolve()
+    if HOME == target:
+        print(f'Already using {target}')
+        return
+    if HOME != (Path.home() / '.local/share/cpa-usage').resolve():
+        raise ValueError('Custom CPA_USAGE_HOME is preserved; migrate only supports the legacy default directory')
+    if target.exists():
+        raise ValueError(f'Target already exists; nothing overwritten: {target}')
+    bin_dir = Path(os.environ.get('CPA_USAGE_BIN', Path.home() / '.local/bin')).expanduser().resolve()
+    active = bool(running())
+    if active:
+        stop()
+    try:
+        migrate_home(HOME, target, bin_dir)
+        if active:
+            subprocess.run([str(bin_dir / 'cpa-usage'), 'start'], check=True)
+    except Exception:
+        write_launcher(HOME, bin_dir)
+        if active:
+            start()
+        raise
+    print(f'Migrated to {target}; old directory retained at {HOME}')
+
+
 def main():
     parser = argparse.ArgumentParser(prog='cpa-usage', description='Local CLIProxyAPI usage dashboard')
-    parser.add_argument('command', choices=['start','stop','restart','status','logs','configure','update','version'])
+    parser.add_argument('command', choices=['start','stop','restart','status','logs','configure','update','migrate','version'])
     parser.add_argument('target', nargs='?', default='latest', help='Update target: latest or vX.Y.Z')
     args = parser.parse_args()
     HOME.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -137,6 +162,7 @@ def main():
         elif args.command == 'restart': stop(); start()
         elif args.command == 'configure': configure()
         elif args.command == 'update': update(args.target)
+        elif args.command == 'migrate': migrate()
         elif args.command == 'version': print(VERSION)
         elif args.command == 'status':
             record = running()

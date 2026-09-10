@@ -1,8 +1,13 @@
 # CPA Usage
 
-A local-first **CLIProxyAPI usage dashboard** with real shadcn/ui components, a stacked Token trend, and command-line lifecycle management.
+**本地优先，轻量运行。** A local-first, lightweight **CLIProxyAPI usage dashboard**.
 
-**状态：v0.1.0 / macOS 与 Linux。MIT 开源。** 无需 Docker、Node.js 或数据库服务，客户端仅需 Python 3.10+、curl 与系统自带的 ps/tail。
+- **本地优先**：配置与历史用量保存在自己的 `~/.cpa-usage/`，不上传第三方分析平台；仅连接你配置的 CPA，安装与更新时访问 GitHub。
+- **轻量运行**：单个 Python 进程 + 嵌入式 SQLite，后端仅使用标准库；前端在发布时预构建，客户端无需 Node.js、Docker 或独立数据库服务。
+
+真实 shadcn/ui 界面，保留 Token 趋势，用一组命令完成服务管理。
+
+**状态：v0.1.1 / macOS 与 Linux。MIT 开源。** 无需 Docker、Node.js 或数据库服务，客户端仅需 Python 3.10+、curl 与系统自带的 ps/tail。
 
 ## 安装
 
@@ -21,10 +26,23 @@ cpa-usage restart
 cpa-usage stop
 cpa-usage version
 cpa-usage update    # 下载最新版本，校验后切换；原先运行则自动重启
-cpa-usage update v0.1.0  # 指定版本（已经安装过的版本不会覆盖）
+cpa-usage update v0.1.1  # 指定版本（已经安装过的版本不会覆盖）
 ```
 
 `start` 为当前用户启动后台服务，不修改系统服务或开机启动配置；电脑重启后需再次运行。Python 3.10+ 找不到时可指定 `PYTHON=/absolute/path/to/python3`。自定义安装位置使用 `CPA_USAGE_HOME` 和 `CPA_USAGE_BIN`；自定义 BIN 更新时需设置同一变量。
+
+## 从旧目录迁移
+
+v0.1.0 默认安装在 `~/.local/share/cpa-usage/`。先升级取得迁移命令，再迁移：
+
+```sh
+cpa-usage update
+cpa-usage migrate
+```
+
+迁移会暂停原服务，用 SQLite backup 复制数据库与配置、日志和程序版本到 `~/.cpa-usage/`，重建虚拟环境、更新命令入口，并恢复原先运行的服务。原目录保留为停止运行的迁移时点副本，不要同时启动两个采集器；迁移后新增记录仅写入新目录。
+
+目标目录已存在时拒绝覆盖；新服务启动失败时恢复原命令入口和原服务。用户自定义的 `CPA_USAGE_HOME` 不会被自动迁移，外部自定义数据库路径也保持不变。新安装直接使用 `~/.cpa-usage/`，无需执行迁移。
 
 ## 界面
 
@@ -38,15 +56,15 @@ cpa-usage update v0.1.0  # 指定版本（已经安装过的版本不会覆盖�
 
 ## 数据与安全
 
-默认目录 `~/.local/share/cpa-usage`：
+默认目录 `~/.cpa-usage/`：
 
 ```text
 config.env          # CPA 连接配置，权限 0600
 usage.sqlite        # 历史用量，更新不覆盖
 service.log         # 后台日志
 venv/               # 无第三方 Python 依赖的隔离运行时
-releases/0.1.0/     # 不可变版本目录
-current -> releases/0.1.0
+releases/0.1.1/     # 不可变版本目录
+current -> releases/0.1.1
 ```
 
 仅监听 `127.0.0.1`，拒绝非本机 Host 和跨站 Origin，不开放 CORS。management key 不进入网页或 URL，API Key 在 API 返回前转换为稳定的匿名分组。原始事件仅保存在本地 SQLite（可能包含 Key），不要将数据库、配置或日志公开上传。**本机其他进程仍可访问此服务，它不是多用户鉴权系统。**
@@ -82,8 +100,8 @@ CPA_USAGE_HOME=/tmp/cpa-usage-dev .venv/bin/python report.py --no-collector
 3. 打版本标签并推送：
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 4. Release 流水线验证标签匹配 `VERSION` 且来自 `main`，测试通过才上传预构建 tar.gz 和 SHA256SUMS。

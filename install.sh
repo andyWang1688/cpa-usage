@@ -2,7 +2,7 @@
 # Install a verified, prebuilt release. No Node.js required on the client.
 set -eu
 REPO=andyWang1688/cpa-usage
-HOME_DIR="${CPA_USAGE_HOME:-$HOME/.local/share/cpa-usage}"
+HOME_DIR="${CPA_USAGE_HOME:-$HOME/.cpa-usage}"
 BIN_DIR="${CPA_USAGE_BIN:-$HOME/.local/bin}"
 if [ -z "${PYTHON:-}" ]; then
   for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
@@ -19,6 +19,10 @@ fi
 "$PYTHON" -c 'import sys; assert sys.version_info >= (3,10), "Python 3.10+ required"'
 if [ -e "$HOME_DIR/current" ]; then
   printf '%s\n' 'Already installed. Run cpa-usage update.'
+  exit 0
+fi
+if [ -z "${CPA_USAGE_HOME:-}" ] && [ -e "$HOME/.local/share/cpa-usage/current" ]; then
+  printf '%s\n' 'Legacy installation found. Run cpa-usage update && cpa-usage migrate to preserve your data.'
   exit 0
 fi
 TMP=$(mktemp -d)

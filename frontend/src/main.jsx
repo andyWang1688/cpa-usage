@@ -285,14 +285,14 @@ function App() {
                   <DialogHeader>
                     <DialogTitle>本地服务</DialogTitle>
                     <DialogDescription>
-                      密钥只存于本机配置文件，不进入浏览器。
+                      单个 Python 进程，无需 Docker 或 Node.js。配置与数据默认保存在 ~/.cpa-usage/，密钥不进入浏览器。
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">版本</span>
                       <Badge variant="secondary">
-                        v{data?.version || "0.1.0"}
+                        v{data?.version || "0.1.1"}
                       </Badge>
                     </div>
                     <Separator />
@@ -321,10 +321,10 @@ function App() {
                 工作台 / 用量分析
               </p>
               <h1 className="text-3xl font-semibold tracking-tight">
-                每一份用量，都有迹可循。
+                本地优先，轻量运行。
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                请求表现、Token 流向与模型分布，一处看清。
+                数据留在本机，一个轻量服务看清请求、Token 与模型用量。
               </p>
             </div>
             <Button
@@ -765,7 +765,7 @@ function App() {
             <span className="flex items-center gap-1.5">
               <Database className="size-3" />
               本地 SQLite · {data?.timezone || "本机时区"} · v
-              {data?.version || "0.1.0"}
+              {data?.version || "0.1.1"}
             </span>
             <span>
               输入包含缓存，输出包含推理

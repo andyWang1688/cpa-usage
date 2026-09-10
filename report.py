@@ -27,7 +27,7 @@ class LocalHTTPServer(ThreadingHTTPServer):
 
 
 BASE = Path(__file__).resolve().parent
-HOME = Path(os.environ.get('CPA_USAGE_HOME', Path.home() / '.local/share/cpa-usage')).expanduser().resolve()
+HOME = Path(os.environ.get('CPA_USAGE_HOME', Path.home() / '.cpa-usage')).expanduser().resolve()
 VERSION = (BASE / 'VERSION').read_text().strip()
 COLLECT_LOCK = threading.Lock()
 LAST = {'ts': None, 'n': 0, 'err': None}
