@@ -36,6 +36,18 @@ cp usage-report.dylib <plugins-dir>/<goos>/<goarch>/
 - Page: `/v0/resource/plugins/usage-report/report`
 - API: `/v0/resource/plugins/usage-report/api/usage?start=YYYY-MM-DD&end=YYYY-MM-DD&bucket=day|hour|month`
 
+## Frontend assets
+
+The files in `web/` are the build output of this repository's `frontend/` directory:
+
+```sh
+cd frontend && npm ci && npm run build
+cp dist/index.html ../plugin/web/index.html
+cp dist/assets/* ../plugin/web/assets/
+```
+
+After replacing assets, update the embedded file names and resource routes in `main.go` (build output uses hashed file names).
+
 ## License
 
-MIT. The bundled dashboard assets (`web/`) come from the [cpa-usage](https://github.com/andyWang1688/cpa-usage) project (MIT).
+MIT. The bundled dashboard assets (`web/`) come from this repository's `frontend/` sources (MIT).
