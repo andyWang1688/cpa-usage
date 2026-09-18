@@ -162,8 +162,8 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 	case "management.register":
 		return okEnvelopeJSON(`{"resources":[
 			{"Path":"/report","Menu":"Usage Report","Description":"CPA usage dashboard"},
-			{"Path":"/assets/index-COUt0Gms.js","Menu":"","Description":"dashboard js"},
-			{"Path":"/assets/index-DGwV2lr0.css","Menu":"","Description":"dashboard css"},
+			{"Path":"/assets/index-BwLPc5iG.js","Menu":"","Description":"dashboard js"},
+			{"Path":"/assets/index-DAMi6wu5.css","Menu":"","Description":"dashboard css"},
 			{"Path":"/api/usage","Menu":"","Description":"usage data api"},
 			{"Path":"/api/health","Menu":"","Description":"health"},
 			{"Path":"/api/collect","Menu":"","Description":"collect trigger"}
@@ -368,15 +368,15 @@ func handleManagement(req []byte) ([]byte, error) {
 		}
 		return managementResponse(200, "text/html; charset=utf-8", html)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-COUt0Gms.js") {
-		js, err := webFS.ReadFile("web/assets/index-COUt0Gms.js")
+	if strings.HasSuffix(m.Path, "/assets/index-BwLPc5iG.js") {
+		js, err := webFS.ReadFile("web/assets/index-BwLPc5iG.js")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}
 		return managementResponse(200, "application/javascript; charset=utf-8", js)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-DGwV2lr0.css") {
-		css, err := webFS.ReadFile("web/assets/index-DGwV2lr0.css")
+	if strings.HasSuffix(m.Path, "/assets/index-DAMi6wu5.css") {
+		css, err := webFS.ReadFile("web/assets/index-DAMi6wu5.css")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}
