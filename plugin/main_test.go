@@ -1,0 +1,109 @@
+package main
+
+import (
+	"encoding/json"
+	"path/filepath"
+	"testing"
+)
+
+func TestRegister(t *testing.T) {
+	raw, err := handleMethod("plugin.register", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e envelope
+	if err := json.Unmarshal(raw, &e); err != nil || !e.OK {
+		t.Fatalf("register: %s %v", raw, err)
+	}
+}
+
+func mgmtReq(path, method string) []byte {
+	req, _ := json.Marshal(map[string]interface{}{
+		"result": map[string]interface{}{
+			"Method": method,
+			"Path":   path,
+			"Query":  map[string][]string{"start": {"2026-09-09"}, "end": {"2026-09-18"}, "bucket": {"day"}},
+			"Headers": map[string][]string{},
+			"Body":    nil,
+		},
+	})
+	return req
+}
+
+func callMgmt(t *testing.T, path, method string) (int, string, []byte) {
+	t.Helper()
+	raw, err := handleMethod("management.handle", mgmtReq(path, method))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e envelope
+	if err := json.Unmarshal(raw, &e); err != nil || !e.OK {
+		t.Fatalf("handle %s: %s %v", path, raw, err)
+	}
+	var resp struct {
+		StatusCode int
+		Headers    map[string][]string
+		Body       []byte
+	}
+	if err := json.Unmarshal(e.Result, &resp); err != nil {
+		t.Fatal(err)
+	}
+	ct := ""
+	if v := resp.Headers["content-type"]; len(v) > 0 {
+		ct = v[0]
+	}
+	return resp.StatusCode, ct, resp.Body
+}
+
+func TestManagementReport(t *testing.T) {
+	status, ct, body := callMgmt(t, "/v0/resource/plugins/usage-report/report", "GET")
+	if status != 200 || len(body) < 300 {
+		t.Fatalf("page: %d %s %d bytes", status, ct, len(body))
+	}
+	t.Logf("page ok: %d bytes, %s", len(body), ct)
+
+	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-COUt0Gms.js", "GET")
+	if status != 200 || len(js) < 100000 {
+		t.Fatalf("js: %d %s %d bytes", status, ct, len(js))
+	}
+	t.Logf("js ok: %d bytes, %s", len(js), ct)
+}
+
+func TestManagementAPI(t *testing.T) {
+	status, _, body := callMgmt(t, "/v0/resource/plugins/usage-report/api/usage", "GET")
+	if status != 200 {
+		t.Fatalf("usage api: %d %s", status, body)
+	}
+	var data struct {
+		Events  []map[string]interface{} `json:"events"`
+		Buckets []map[string]interface{} `json:"buckets"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		t.Fatalf("decode: %v body=%s", err, body[:200])
+	}
+	if len(data.Events) == 0 {
+		t.Fatal("no events")
+	}
+	t.Logf("usage api ok: %d events, %d buckets", len(data.Events), len(data.Buckets))
+}
+
+func TestUsageHandle(t *testing.T) {
+	openDB(filepath.Join(t.TempDir(), "test.sqlite"))
+	req := []byte(`{"result":{"Provider":"codex","Model":"gpt-6-astra","Source":"sk-test","RequestedAt":"2026-09-18T11:30:00+08:00","Latency":1500000000,"TTFT":250000000,"Detail":{"InputTokens":100,"OutputTokens":20,"ReasoningTokens":5,"CachedTokens":80,"CacheReadTokens":80,"TotalTokens":120},"Failed":false}}`)
+	raw, err := handleMethod("usage.handle", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e envelope
+	if err := json.Unmarshal(raw, &e); err != nil || !e.OK {
+		t.Fatalf("usage.handle: %s %v", raw, err)
+	}
+	var n int
+	mu.Lock()
+	_ = db.QueryRow("SELECT COUNT(*) FROM usage_events").Scan(&n)
+	mu.Unlock()
+	if n != 1 {
+		t.Fatalf("expect 1 row, got %d", n)
+	}
+	t.Logf("usage.handle wrote %d row", n)
+}
