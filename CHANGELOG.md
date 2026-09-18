@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Dashboard: drop the obsolete standalone-service settings dialog, the "sync usage" button and the terminal setup notice; the page auto-refreshes and the footer shows the plugin version.
+- Frontend: build with `base: "./"` and relative API paths so assets resolve from the plugin resource route.
+- Release: the plugin version is injected at build time (`-ldflags -X main.version=$VERSION`).
+
 ## 0.2.0
 
 - Rework the project into a CLIProxyAPI native plugin (`plugin/`): usage collected in real time via the `usage.handle` callback; dashboard and data API served inside the CPA process via `management_api`.
