@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Dashboard "更新于" (updated at) now reflects the freshness timestamp of each refresh instead of the last received request time, so it no longer looks frozen during idle periods.
+
 ## 0.2.1
 
 - Dashboard: drop the obsolete standalone-service settings dialog, the "sync usage" button and the terminal setup notice; the page auto-refreshes and the footer shows the plugin version.
