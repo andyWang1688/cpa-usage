@@ -2,14 +2,55 @@
 
 **本地优先，轻量运行。** A local-first, lightweight **CLIProxyAPI usage dashboard**.
 
-- **本地优先**：配置与历史用量保存在自己的 `~/.cpa-usage/`，不上传第三方分析平台；仅连接你配置的 CPA，安装与更新时访问 GitHub。
-- **轻量运行**：单个 Python 进程 + 嵌入式 SQLite，后端仅使用标准库；前端在发布时预构建，客户端无需 Node.js、Docker 或独立数据库服务。
+- **本地优先**：配置与历史用量保存在本机，不上传第三方分析平台；仅连接你配置的 CPA。
+- **轻量运行**：两种形态任选——CLIProxyAPI 原生插件（随 CPA 进程运行，无需额外服务），或独立版（单 Python 进程 + 嵌入式 SQLite，仅标准库）。
+- 真实 shadcn/ui 界面，Token 趋势、模型/Key 明细与筛选齐全。
 
-真实 shadcn/ui 界面，保留 Token 趋势，用一组命令完成服务管理。
+**状态：v0.2.0。MIT 开源。** 插件版支持 macOS / Linux（随 CPA 支持的平台）；独立版支持 macOS / Linux，客户端仅需 Python 3.10+。
 
-**状态：v0.1.1 / macOS 与 Linux。MIT 开源。** 无需 Docker、Node.js 或数据库服务，客户端仅需 Python 3.10+、curl 与系统自带的 ps/tail。
+## 两种形态
 
-## 安装
+| | 插件版（推荐） | 独立版（Python） |
+|---|---|---|
+| 运行方式 | 随 CLIProxyAPI 进程内运行（`.dylib`/`.so`） | 独立后台服务 `cpa-usage` |
+| 采集方式 | `usage.handle` 回调，请求完成即入库（实时，无轮询） | 每 15 秒轮询 CPA `usage-queue` |
+| 安装 | CPA 插件商店一键安装 | `install.sh` 安装脚本 |
+| 页面地址 | `http://127.0.0.1:8317/v0/resource/plugins/usage-report/report` | `http://127.0.0.1:8899` |
+| 数据文件 | CPA 配置的 `db_path`（默认 `~/.cli-proxy-api/usage-report/usage.sqlite`） | `~/.cpa-usage/usage.sqlite` |
+| 依赖 | 无（CPA 加载动态库） | Python 3.10+、curl |
+
+两种形态界面完全一致（独立版前端即插件所附带的同一套构建产物），数据互不影响，可同时安装。
+
+## 插件版安装（推荐）
+
+1. 在 `cliproxyapi.conf` 中添加插件商店源：
+
+```yaml
+plugins:
+  enabled: true
+  store-sources:
+    - "https://gist.githubusercontent.com/andyWang1688/dd3211dbf2af7e9c3c05f4319014ec99/raw/registry.json"
+  configs:
+    usage-report:
+      enabled: true
+      db_path: "~/.cli-proxy-api/usage-report/usage.sqlite"
+```
+
+2. 重启 CLIProxyAPI，打开管理面板 → **插件商店** → 找到 **CPA Usage Report** → 安装。
+3. 打开 **插件 → Usage Report**（或访问 `/v0/resource/plugins/usage-report/report`）。
+
+> 商店列表会查询 GitHub API；若遇到 rate limit，可为 CPA 进程配置 `GITHUB_TOKEN` 环境变量并添加 `store-auth`（`type: github-token`、`token-env: GITHUB_TOKEN`）。
+
+手动安装（离线场景）：
+
+```bash
+cd plugin
+go build -buildmode=c-shared -o usage-report.dylib .
+mkdir -p <plugins-dir>/<goos>/<goarch>
+cp usage-report.dylib <plugins-dir>/<goos>/<goarch>/
+```
+
+## 独立版安装（Python）
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/andyWang1688/cpa-usage/main/install.sh | sh
@@ -26,12 +67,12 @@ cpa-usage restart
 cpa-usage stop
 cpa-usage version
 cpa-usage update    # 下载最新版本，校验后切换；原先运行则自动重启
-cpa-usage update v0.1.1  # 指定版本（已经安装过的版本不会覆盖）
+cpa-usage update v0.2.0  # 指定版本（已经安装过的版本不会覆盖）
 ```
 
 `start` 为当前用户启动后台服务，不修改系统服务或开机启动配置；电脑重启后需再次运行。Python 3.10+ 找不到时可指定 `PYTHON=/absolute/path/to/python3`。自定义安装位置使用 `CPA_USAGE_HOME` 和 `CPA_USAGE_BIN`；自定义 BIN 更新时需设置同一变量。
 
-## 从旧目录迁移
+## 从旧目录迁移（独立版）
 
 v0.1.0 默认安装在 `~/.local/share/cpa-usage/`。先升级取得迁移命令，再迁移：
 
@@ -56,28 +97,57 @@ cpa-usage migrate
 
 ## 数据与安全
 
-默认目录 `~/.cpa-usage/`：
+- 插件版：仅保存 CPA 配置中 `db_path` 指向的 SQLite；由 CPA 进程按插件配置读写。
+- 独立版：默认目录 `~/.cpa-usage/`：
 
 ```text
 config.env          # CPA 连接配置，权限 0600
 usage.sqlite        # 历史用量，更新不覆盖
 service.log         # 后台日志
 venv/               # 无第三方 Python 依赖的隔离运行时
-releases/0.1.1/     # 不可变版本目录
-current -> releases/0.1.1
+releases/0.2.0/     # 不可变版本目录
+current -> releases/0.2.0
 ```
 
-仅监听 `127.0.0.1`，拒绝非本机 Host 和跨站 Origin，不开放 CORS。management key 不进入网页或 URL，API Key 在 API 返回前转换为稳定的匿名分组。原始事件仅保存在本地 SQLite（可能包含 Key），不要将数据库、配置或日志公开上传。**本机其他进程仍可访问此服务，它不是多用户鉴权系统。**
+独立版仅监听 `127.0.0.1`，拒绝非本机 Host 和跨站 Origin，不开放 CORS。management key 不进入网页或 URL，API Key 在 API 返回前转换为稳定的匿名分组。原始事件仅保存在本地 SQLite（可能包含 Key），不要将数据库、配置或日志公开上传。**本机其他进程仍可访问独立版服务，它不是多用户鉴权系统。**
 
-采集线程与 HTTP 服务同进程，每 15 秒读取 `/v0/management/usage-queue`，一次最多 600 批，每批立即提交 SQLite 并按事件内容去重。队列接口需由你的 CPA 版本提供；不兼容时显示错误。此接口可能是消费式读取，不应同时运行两个采集器。
+采集依赖进程或 CPA 持续运行；CPA 队列保留时长由 CPA 配置决定。插件版实时采集不依赖队列窗口；独立版停机过久（超过队列保留时长）或队列读取后进程突然退出仍可能丢数据。程序不会保证绝对不丢失，也不会删除无法解析时间戳的原始记录。
 
-采集依赖服务持续运行；CPA 队列保留时长由 CPA 配置决定，停机过久或队列读取后进程突然退出仍可能丢数据。程序不会保证绝对不丢失，也不会删除无法解析时间戳的原始记录。无效记录计数显示在页面。
-
-旧报表迁移：先停止旧采集进程，用 SQLite backup 备份原 `usage.sqlite`，再复制到新数据目录（同名表 `usage_events`，无需改表）；将原配置写入新 `config.env`，确认 DB_PATH 指向保留的数据后再启动。不要在两个采集器同时运行时迁移。
+旧报表迁移（独立版）：先停止旧采集进程，用 SQLite backup 备份原 `usage.sqlite`，再复制到新数据目录（同名表 `usage_events`，无需改表）；将原配置写入新 `config.env`，确认 DB_PATH 指向保留的数据后再启动。不要在两个采集器同时运行时迁移。插件版与独立版共用同一 `usage_events` 表结构，可在停止采集进程后用 SQLite backup 互相迁移数据。
 
 更新只切换程序目录，不改变数据库结构或配置。启动验证失败会切回旧版本并尝试恢复原服务；老版本目录保留用于排查。checksum 验证用于检查下载完整性，信任来源仍是 GitHub 仓库及 HTTPS，不等于独立数字签名。
 
-## 本地开发与验证
+## 插件开发（plugin/）
+
+插件为 Go 编写的原生动态库（C ABI），实现 `usage_plugin`（实时用量回调）与 `management_api`（页面与 API 路由）两项能力。
+
+```sh
+cd plugin
+GOPROXY=https://goproxy.cn,direct go test ./...       # 本地单元测试
+go build -buildmode=c-shared -o usage-report.dylib .  # macOS；Linux 为 .so
+```
+
+页面资源位于 `plugin/web/`，来自本仓库 `frontend/` 的构建产物：
+
+```sh
+cd frontend && npm ci && npm run build
+cp dist/index.html ../plugin/web/index.html
+cp dist/assets/* ../plugin/web/assets/
+```
+
+> 替换前端后需同步更新 `plugin/main.go` 中 embed 的文件名与 `management.register` 的资源路由（构建产物带 hash 文件名）。
+
+发布新版本（插件商店）：
+
+```sh
+cp usage-report.dylib /tmp/usage-report-v0.2.1.dylib && cd /tmp
+zip usage-report_0.2.1_darwin_arm64.zip usage-report-v0.2.1.dylib
+shasum -a 256 usage-report_0.2.1_darwin_arm64.zip > checksums.txt
+gh release create v0.2.1 --repo andyWang1688/cpa-usage usage-report_0.2.1_darwin_arm64.zip checksums.txt
+# 更新插件商店 registry 中的 version 字段
+```
+
+## 本地开发与验证（独立版）
 
 ```sh
 python3 -m venv .venv
@@ -100,11 +170,11 @@ CPA_USAGE_HOME=/tmp/cpa-usage-dev .venv/bin/python report.py --no-collector
 3. 打版本标签并推送：
 
 ```sh
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-4. Release 流水线验证标签匹配 `VERSION` 且来自 `main`，测试通过才上传预构建 tar.gz 和 SHA256SUMS。
+4. Release 流水线验证标签匹配 `VERSION` 且来自 `main`，测试通过才上传预构建 tar.gz 和 SHA256SUMS；插件二进制资产按上文手动附加到同一 Release。
 5. 客户端 `cpa-usage update` 下载新版本，保留本地配置和历史，原先运行则自动重启。
 
 流水线不需要仓库存储额外发布密钥，使用 GitHub 提供的短期 GITHUB_TOKEN。安装包采用显式文件白名单，不打包整个开发目录。
