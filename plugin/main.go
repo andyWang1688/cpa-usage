@@ -80,6 +80,9 @@ var webFS embed.FS
 
 const abiVersion uint32 = 1
 
+// version is injected at release time via -ldflags "-X main.version=..."
+var version = "0.2.1"
+
 type envelope struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
@@ -158,7 +161,7 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 	switch method {
 	case "plugin.register", "plugin.reconfigure":
 		applyConfig(req)
-		return okEnvelopeJSON(`{"schema_version":1,"metadata":{"Name":"usage-report","Version":"0.2.0","Author":"local","GitHubRepository":"https://github.com/andyWang1688/cpa-usage","Logo":"","ConfigFields":[]},"capabilities":{"usage_plugin":true,"management_api":true}}`)
+		return okEnvelopeJSON(`{"schema_version":1,"metadata":{"Name":"usage-report","Version":"` + version + `","Author":"local","GitHubRepository":"https://github.com/andyWang1688/cpa-usage","Logo":"","ConfigFields":[]},"capabilities":{"usage_plugin":true,"management_api":true}}`)
 	case "management.register":
 		return okEnvelopeJSON(`{"resources":[
 			{"Path":"/report","Menu":"Usage Report","Description":"CPA usage dashboard"},
@@ -416,8 +419,6 @@ func managementResponse(status int, contentType string, body []byte) ([]byte, er
 
 // ---- usage api (compatible with cpa-usage frontend contract) ----
 
-const version = "0.1.1"
-
 type dbEvent struct {
 	Timestamp string         `json:"timestamp"`
 	Model     string         `json:"model"`
@@ -627,12 +628,9 @@ func parseAnyTime(s string) (float64, error) {
 }
 
 func collectedAt() interface{} {
-	mu.Lock()
-	defer mu.Unlock()
-	if lastRecv.IsZero() {
-		return nil
-	}
-	return lastRecv.Format(time.RFC3339Nano)
+	// Report the data freshness timestamp as of this response: with real-time
+	// collection this means "the dashboard data is current as of now".
+	return time.Now().Format(time.RFC3339Nano)
 }
 
 func collectErr() interface{} {
