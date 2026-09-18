@@ -189,6 +189,15 @@ func applyConfig(req []byte) {
 	}
 	_ = json.Unmarshal(req, &parsed)
 	if parsed.ConfigYaml == "" {
+		// Some host versions wrap the payload in a {"result": {...}} envelope.
+		var wrapped struct {
+			Result json.RawMessage `json:"result"`
+		}
+		if err := json.Unmarshal(req, &wrapped); err == nil && wrapped.Result != nil {
+			_ = json.Unmarshal(wrapped.Result, &parsed)
+		}
+	}
+	if parsed.ConfigYaml == "" {
 		return
 	}
 	path := ""
@@ -215,7 +224,7 @@ func defaultDBPath() string {
 	if err != nil {
 		return "usage.sqlite"
 	}
-	return filepath.Join(u.HomeDir, ".cli-proxy-api", "usage-report", "usage.sqlite")
+	return filepath.Join(u.HomeDir, ".cli-proxy-api", "usage-report.sqlite")
 }
 
 func openDB(path string) {
