@@ -14,9 +14,7 @@ import {
   Moon,
   RefreshCw,
   Search,
-  Settings2,
   Sun,
-  Terminal,
   WifiOff,
 } from "lucide-react";
 import { format, subDays } from "date-fns";
@@ -58,12 +56,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Tooltip,
@@ -147,19 +139,12 @@ function App() {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("cpa-usage-theme", dark ? "dark" : "light");
   }, [dark]);
-  async function load(collect = false) {
+  async function load() {
     const id = ++generation.current;
     setBusy(true);
     try {
-      if (collect) {
-        const r = await fetch("/api/collect", {
-          method: "POST",
-          headers: { "X-CPA-Usage": "1" },
-        });
-        if (!r.ok) throw Error("采集请求失败");
-      }
       const r = await fetch(
-        `/api/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`,
+        `api/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`,
       );
       if (!r.ok) throw Error(`服务返回 ${r.status}`);
       const d = await r.json();
@@ -275,42 +260,6 @@ function App() {
               >
                 {dark ? <Sun /> : <Moon />}
               </Button>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="服务设置">
-                    <Settings2 />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>本地服务</DialogTitle>
-                    <DialogDescription>
-                      单个 Python 进程，无需 Docker 或 Node.js。配置与数据默认保存在 ~/.cpa-usage/，密钥不进入浏览器。
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">版本</span>
-                      <Badge variant="secondary">
-                        v{data?.version || "0.1.1"}
-                      </Badge>
-                    </div>
-                    <Separator />
-                    <p>首次连接或修改 CPA 地址、密钥：</p>
-                    <pre className="rounded-md bg-muted p-3 font-mono">
-                      cpa-usage configure
-                    </pre>
-                    <p>安装新版本并自动重启：</p>
-                    <pre className="rounded-md bg-muted p-3 font-mono">
-                      cpa-usage update
-                    </pre>
-                    <p className="text-muted-foreground">
-                      配置和 SQLite 历史独立保存，更新不会覆盖。仅监听
-                      127.0.0.1。
-                    </p>
-                  </div>
-                </DialogContent>
-              </Dialog>
             </div>
           </div>
         </header>
@@ -329,11 +278,11 @@ function App() {
             </div>
             <Button
               variant="outline"
-              onClick={() => load(true)}
+              onClick={() => load()}
               disabled={busy}
             >
               <RefreshCw className={busy ? "animate-spin" : ""} />
-              {busy ? "正在同步" : "同步用量"}
+              {busy ? "刷新中" : "刷新"}
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -421,19 +370,7 @@ function App() {
                 {error}。
                 {data
                   ? "下方保留上次结果，请重试。"
-                  : "请确认本地服务正在运行。"}
-              </AlertDescription>
-            </Alert>
-          )}
-          {data && !data.configured && (
-            <Alert>
-              <Terminal />
-              <AlertTitle>连接你的 CLIProxyAPI</AlertTitle>
-              <AlertDescription>
-                <span>
-                  在终端运行 <code>cpa-usage configure</code> 设置 CPA 地址和
-                  management key；采集不依赖浏览器开启。
-                </span>
+                  : "请确认 CLIProxyAPI 与插件运行正常。"}
               </AlertDescription>
             </Alert>
           )}
