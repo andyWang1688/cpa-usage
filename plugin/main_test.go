@@ -70,6 +70,11 @@ func TestManagementReport(t *testing.T) {
 }
 
 func TestManagementAPI(t *testing.T) {
+	openDB(filepath.Join(t.TempDir(), "test.sqlite"))
+	seed := []byte(`{"result":{"Provider":"codex","Model":"gpt-ci-test","Source":"sk-ci","RequestedAt":"2026-09-10T11:30:00+08:00","Detail":{"InputTokens":100,"OutputTokens":20,"CacheReadTokens":80,"TotalTokens":120},"Failed":false}}`)
+	if _, err := handleMethod("usage.handle", seed); err != nil {
+		t.Fatal(err)
+	}
 	status, _, body := callMgmt(t, "/v0/resource/plugins/usage-report/api/usage", "GET")
 	if status != 200 {
 		t.Fatalf("usage api: %d %s", status, body)
@@ -81,8 +86,11 @@ func TestManagementAPI(t *testing.T) {
 	if err := json.Unmarshal(body, &data); err != nil {
 		t.Fatalf("decode: %v body=%s", err, body[:200])
 	}
-	if len(data.Events) == 0 {
-		t.Fatal("no events")
+	if len(data.Events) != 1 {
+		t.Fatalf("expect 1 event, got %d", len(data.Events))
+	}
+	if got := data.Events[0]["model"]; got != "gpt-ci-test" {
+		t.Fatalf("unexpected model: %v", got)
 	}
 	t.Logf("usage api ok: %d events, %d buckets", len(data.Events), len(data.Buckets))
 }

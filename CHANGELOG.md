@@ -2,10 +2,11 @@
 
 ## 0.2.0
 
-- Add the CLIProxyAPI plugin form (`plugin/`): a native dynamic library that implements `usage_plugin` (real-time collection via the `usage.handle` callback) and `management_api` (dashboard page and data API served inside the CPA process).
-- Add the plugin store registry (`plugin-store/registry.json`); install with one click from the CPA Plugin Store.
-- Dashboard assets are built from the same `frontend/` sources and bundled into the plugin.
-- Standalone (Python) distribution continues from the same source tree without functional changes; its release assets are attached to the same tag.
+- Rework the project into a CLIProxyAPI native plugin (`plugin/`): usage collected in real time via the `usage.handle` callback; dashboard and data API served inside the CPA process via `management_api`.
+- Publish installable releases through the plugin store (`plugin-store/registry.json`); one-click install from the CPA management panel.
+- Automated multi-platform plugin builds on tag (darwin/arm64, linux/amd64, linux/arm64) with `checksums.txt`.
+- Dashboard assets are built from `frontend/` and embedded into the plugin.
+- Remove the former standalone Python service (`report.py`, `cli.py`, `install.sh` and related tests/scripts); the plugin replaces it.
 
 ## 0.1.1
 
