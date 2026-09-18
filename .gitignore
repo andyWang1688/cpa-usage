@@ -5,9 +5,10 @@ config.env
 *.log
 *.pid
 HANDOFF.md
-.venv/
-__pycache__/
 frontend/node_modules/
 frontend/dist/
+plugin/*.dylib
+plugin/*.so
+plugin/*.h
 dist/
 .DS_Store
