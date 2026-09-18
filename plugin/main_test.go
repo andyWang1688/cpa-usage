@@ -115,3 +115,17 @@ func TestUsageHandle(t *testing.T) {
 	}
 	t.Logf("usage.handle wrote %d row", n)
 }
+
+func TestApplyConfig(t *testing.T) {
+	tmp := t.TempDir()
+	direct := []byte(`{"config_yaml":"enabled: true\ndb_path: \"` + tmp + `/direct.sqlite\"\n"}`)
+	applyConfig(direct)
+	if lastOpened != tmp+"/direct.sqlite" {
+		t.Fatalf("direct shape: got %q", lastOpened)
+	}
+	wrapped := []byte(`{"result":{"config_yaml":"db_path: ` + tmp + `/wrapped.sqlite"}}`)
+	applyConfig(wrapped)
+	if lastOpened != tmp+"/wrapped.sqlite" {
+		t.Fatalf("wrapped shape: got %q", lastOpened)
+	}
+}
