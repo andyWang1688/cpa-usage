@@ -118,21 +118,44 @@ function Metric({ label, value, detail, help, loading }) {
   );
 }
 const API_BASE = "/v0/management/plugins/usage-report/api";
-const KEY_STORAGE = "cpa-usage:management-key";
+const KEY_PROMPT =
+  "请返回 CPA 管理中心重新登录并勾选“记住密码”，然后刷新本页面。";
 
-function managementKey(force) {
-  if (force) localStorage.removeItem(KEY_STORAGE);
-  let key = localStorage.getItem(KEY_STORAGE);
-  if (!key) {
-    key = (window.prompt("请输入 CPA 管理密钥（保存在本机浏览器）") || "").trim();
-    if (!key) throw Error("未填写管理密钥");
-    localStorage.setItem(KEY_STORAGE, key);
+function xorBytes(bytes, keyBytes) {
+  const output = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    output[i] = bytes[i] ^ keyBytes[i % keyBytes.length];
   }
-  return key;
+  return output;
 }
 
-function authHeaders(force) {
-  return { Authorization: `Bearer ${managementKey(force)}` };
+// Read the CPA management panel session from same-origin localStorage,
+// following the secure-storage format used across the CPA plugin ecosystem.
+function decodeCPAStorage(raw) {
+  if (!raw) return null;
+  const prefix = "enc::v1::";
+  let text = raw;
+  if (text.startsWith(prefix)) {
+    const binary = atob(text.slice(prefix.length));
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const storageKey = `cli-proxy-api-webui::secure-storage|${location.host}|${navigator.userAgent}`;
+    text = new TextDecoder().decode(
+      xorBytes(bytes, new TextEncoder().encode(storageKey)),
+    );
+  }
+  return JSON.parse(text);
+}
+
+function readManagementKey() {
+  try {
+    const parsed = decodeCPAStorage(localStorage.getItem("cli-proxy-auth"));
+    const state = parsed && parsed.state ? parsed.state : parsed;
+    const value = state && state.managementKey;
+    return typeof value === "string" ? value.trim() : "";
+  } catch {
+    return "";
+  }
 }
 
 function App() {
@@ -161,11 +184,13 @@ function App() {
     const id = ++generation.current;
     setBusy(true);
     try {
-      const url = `${API_BASE}/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`;
-      let r = await fetch(url, { headers: authHeaders() });
-      if (r.status === 401 || r.status === 403) {
-        r = await fetch(url, { headers: authHeaders(true) });
-      }
+      const key = readManagementKey();
+      if (!key) throw Error(KEY_PROMPT);
+      const r = await fetch(
+        `${API_BASE}/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`,
+        { headers: { Authorization: `Bearer ${key}` } },
+      );
+      if (r.status === 401 || r.status === 403) throw Error(KEY_PROMPT);
       if (!r.ok) throw Error(`服务返回 ${r.status}`);
       const d = await r.json();
       if (d.error) throw Error(d.error);
