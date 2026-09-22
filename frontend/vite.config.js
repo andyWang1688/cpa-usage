@@ -6,5 +6,10 @@ export default defineConfig({
   base: "./",
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
-  server: { proxy: { "/api": "http://127.0.0.1:8898" } },
+  server: {
+    proxy: {
+      "/api": "http://127.0.0.1:8898",
+      "/v0": "http://127.0.0.1:8317",
+    },
+  },
 });

@@ -27,7 +27,7 @@ plugins:
 ```
 
 2. 重启 CLIProxyAPI，打开管理面板 → **插件商店** → 找到 **CPA Usage Report** → 安装。
-3. 打开 **插件 → Usage Report**（或访问 `/v0/resource/plugins/usage-report/report`）。
+3. 打开 **插件 → Usage Report**（或访问 `/v0/resource/plugins/usage-report/report`）。页面首次打开时会提示输入 **CPA 管理密钥**（保存在浏览器本地，用于访问受保护的插件 API）。
 
 > CPA 访问 GitHub API 查插件信息有匿名频率限制；若遇到 rate limit，可为 CPA 进程配置 `GITHUB_TOKEN` 环境变量，并在 `plugins.store-auth` 添加 `type: github-token`、`token-env: GITHUB_TOKEN` 的规则。
 
@@ -52,7 +52,7 @@ go build -buildmode=c-shared -o usage-report.dylib .   # macOS；Linux 产物为
 ## 使用
 
 - 页面：`/v0/resource/plugins/usage-report/report`
-- 数据 API：`/v0/resource/plugins/usage-report/api/usage?start=YYYY-MM-DD&end=YYYY-MM-DD&bucket=day|hour|month`
+- 数据 API（需认证）：`/v0/management/plugins/usage-report/api/usage?start=YYYY-MM-DD&end=YYYY-MM-DD&bucket=day|hour|month`，请求头 `Authorization: Bearer <管理密钥>`
 - 任何经过该 CPA 实例的请求（Codex CLI、OpenCode、其他客户端）都会自动记录。
 
 界面能力：

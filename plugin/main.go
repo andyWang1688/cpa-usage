@@ -163,13 +163,14 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 		applyConfig(req)
 		return okEnvelopeJSON(`{"schema_version":1,"metadata":{"Name":"usage-report","Version":"` + version + `","Author":"local","GitHubRepository":"https://github.com/andyWang1688/cpa-usage","Logo":"","ConfigFields":[]},"capabilities":{"usage_plugin":true,"management_api":true}}`)
 	case "management.register":
-		return okEnvelopeJSON(`{"resources":[
+		return okEnvelopeJSON(`{"routes":[
+			{"Method":"GET","Path":"/plugins/usage-report/api/usage","Menu":"","Description":"usage data api"},
+			{"Method":"GET","Path":"/plugins/usage-report/api/health","Menu":"","Description":"health"},
+			{"Method":"POST","Path":"/plugins/usage-report/api/collect","Menu":"","Description":"collect trigger"}
+		],"resources":[
 			{"Path":"/report","Menu":"Usage Report","Description":"CPA usage dashboard"},
-			{"Path":"/assets/index-BwLPc5iG.js","Menu":"","Description":"dashboard js"},
-			{"Path":"/assets/index-DAMi6wu5.css","Menu":"","Description":"dashboard css"},
-			{"Path":"/api/usage","Menu":"","Description":"usage data api"},
-			{"Path":"/api/health","Menu":"","Description":"health"},
-			{"Path":"/api/collect","Menu":"","Description":"collect trigger"}
+			{"Path":"/assets/index-OWDeRYGL.js","Menu":"","Description":"dashboard js"},
+			{"Path":"/assets/index-DAMi6wu5.css","Menu":"","Description":"dashboard css"}
 		]}`)
 	case "usage.handle":
 		handleUsage(req)
@@ -380,8 +381,8 @@ func handleManagement(req []byte) ([]byte, error) {
 		}
 		return managementResponse(200, "text/html; charset=utf-8", html)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-BwLPc5iG.js") {
-		js, err := webFS.ReadFile("web/assets/index-BwLPc5iG.js")
+	if strings.HasSuffix(m.Path, "/assets/index-OWDeRYGL.js") {
+		js, err := webFS.ReadFile("web/assets/index-OWDeRYGL.js")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}

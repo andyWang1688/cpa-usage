@@ -117,6 +117,24 @@ function Metric({ label, value, detail, help, loading }) {
     </Card>
   );
 }
+const API_BASE = "/v0/management/plugins/usage-report/api";
+const KEY_STORAGE = "cpa-usage:management-key";
+
+function managementKey(force) {
+  if (force) localStorage.removeItem(KEY_STORAGE);
+  let key = localStorage.getItem(KEY_STORAGE);
+  if (!key) {
+    key = (window.prompt("请输入 CPA 管理密钥（保存在本机浏览器）") || "").trim();
+    if (!key) throw Error("未填写管理密钥");
+    localStorage.setItem(KEY_STORAGE, key);
+  }
+  return key;
+}
+
+function authHeaders(force) {
+  return { Authorization: `Bearer ${managementKey(force)}` };
+}
+
 function App() {
   const [range, setRange] = useState(initialRange),
     [draft, setDraft] = useState(initialRange),
@@ -143,9 +161,11 @@ function App() {
     const id = ++generation.current;
     setBusy(true);
     try {
-      const r = await fetch(
-        `api/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`,
-      );
+      const url = `${API_BASE}/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`;
+      let r = await fetch(url, { headers: authHeaders() });
+      if (r.status === 401 || r.status === 403) {
+        r = await fetch(url, { headers: authHeaders(true) });
+      }
       if (!r.ok) throw Error(`服务返回 ${r.status}`);
       const d = await r.json();
       if (d.error) throw Error(d.error);

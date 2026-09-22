@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -62,7 +63,7 @@ func TestManagementReport(t *testing.T) {
 	}
 	t.Logf("page ok: %d bytes, %s", len(body), ct)
 
-	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-BwLPc5iG.js", "GET")
+	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-OWDeRYGL.js", "GET")
 	if status != 200 || len(js) < 100000 {
 		t.Fatalf("js: %d %s %d bytes", status, ct, len(js))
 	}
@@ -75,7 +76,7 @@ func TestManagementAPI(t *testing.T) {
 	if _, err := handleMethod("usage.handle", seed); err != nil {
 		t.Fatal(err)
 	}
-	status, _, body := callMgmt(t, "/v0/resource/plugins/usage-report/api/usage", "GET")
+	status, _, body := callMgmt(t, "/v0/management/plugins/usage-report/api/usage", "GET")
 	if status != 200 {
 		t.Fatalf("usage api: %d %s", status, body)
 	}
@@ -127,5 +128,44 @@ func TestApplyConfig(t *testing.T) {
 	applyConfig(wrapped)
 	if lastOpened != tmp+"/wrapped.sqlite" {
 		t.Fatalf("wrapped shape: got %q", lastOpened)
+	}
+}
+
+func TestManagementRegisterRoutes(t *testing.T) {
+	raw, err := handleMethod("management.register", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var e envelope
+	if err := json.Unmarshal(raw, &e); err != nil || !e.OK {
+		t.Fatalf("register: %s %v", raw, err)
+	}
+	var reg struct {
+		Routes []struct {
+			Method string
+			Path   string
+		}
+		Resources []struct {
+			Path string
+		}
+	}
+	if err := json.Unmarshal(e.Result, &reg); err != nil {
+		t.Fatal(err)
+	}
+	if len(reg.Routes) != 3 {
+		t.Fatalf("expect 3 authenticated routes, got %d", len(reg.Routes))
+	}
+	for _, r := range reg.Routes {
+		if r.Method != "GET" && r.Method != "POST" {
+			t.Fatalf("route %s missing explicit method", r.Path)
+		}
+		if !strings.HasPrefix(r.Path, "/plugins/usage-report/api/") {
+			t.Fatalf("route outside plugin namespace: %s", r.Path)
+		}
+	}
+	for _, r := range reg.Resources {
+		if strings.Contains(r.Path, "/api/") {
+			t.Fatalf("dynamic api must not be registered as resource: %s", r.Path)
+		}
 	}
 }
