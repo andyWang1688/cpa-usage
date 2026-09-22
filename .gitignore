@@ -12,3 +12,5 @@ plugin/*.so
 plugin/*.h
 dist/
 .DS_Store
+plugin/usage-report
+plugin/usage-report.test
