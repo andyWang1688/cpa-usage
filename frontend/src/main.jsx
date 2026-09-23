@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { cn } from "cn";
 import {
   Activity,
   ArrowDownUp,
@@ -38,7 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/segmented-control";
 import {
   Popover,
   PopoverContent,
@@ -312,7 +311,6 @@ function App() {
         : spansToday && fromKey === dateKey(subDays(new Date(), 29))
           ? 30
           : 0;
-  const quickIdx = activeQuick === 1 ? 0 : activeQuick === 7 ? 1 : activeQuick === 30 ? 2 : -1;
   return (
     <TooltipProvider>
       <div className="min-h-dvh">
@@ -379,39 +377,16 @@ function App() {
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div
-              role="group"
-              aria-label="时间范围"
-              className="relative grid w-fit grid-cols-3 rounded-md bg-muted p-[3px]"
-            >
-              {quickIdx >= 0 && (
-                <span
-                  aria-hidden
-                  className="absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-[5px] bg-background shadow-sm transition-transform duration-200 ease-out"
-                  style={{ transform: `translateX(${quickIdx * 100}%)` }}
-                />
-              )}
-              {[
-                ["今天", 1],
-                ["近 7 天", 7],
-                ["近 30 天", 30],
-              ].map(([label, days]) => (
-                <button
-                  key={days}
-                  type="button"
-                  onClick={() => quick(days)}
-                  aria-pressed={activeQuick === days}
-                  className={cn(
-                    "relative z-10 h-7 rounded-[5px] text-sm transition-colors",
-                    activeQuick === days
-                      ? "font-medium text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              ariaLabel="时间范围"
+              value={activeQuick}
+              onChange={quick}
+              items={[
+                { label: "今天", value: 1 },
+                { label: "近 7 天", value: 7 },
+                { label: "近 30 天", value: 30 },
+              ]}
+            />
             <Popover
               open={calendarOpen}
               onOpenChange={(o) => {
@@ -551,13 +526,16 @@ function App() {
                   缓存输入、净输入和输出的堆叠分布
                 </CardDescription>
               </div>
-              <Tabs value={bucket} onValueChange={setBucket}>
-                <TabsList>
-                  <TabsTrigger value="hour">小时</TabsTrigger>
-                  <TabsTrigger value="day">天</TabsTrigger>
-                  <TabsTrigger value="month">月</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              <SegmentedControl
+                ariaLabel="聚合粒度"
+                value={bucket}
+                onChange={setBucket}
+                items={[
+                  { label: "小时", value: "hour" },
+                  { label: "天", value: "day" },
+                  { label: "月", value: "month" },
+                ]}
+              />
             </CardHeader>
             <CardContent>
               {loading ? (
@@ -606,6 +584,8 @@ function App() {
                           stroke={`var(--color-${k})`}
                           fill={`var(--color-${k})`}
                           fillOpacity={k === "output" ? 0.8 : 0.6}
+                          animationDuration={450}
+                          animationEasing="ease-out"
                         />
                       ))}
                     </AreaChart>
@@ -654,21 +634,42 @@ function App() {
                 </div>
               </div>
             </CardHeader>
-            <Tabs value={tab} onValueChange={setTab} className="gap-0">
+            <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-6 pb-4">
-                <TabsList>
-                  <TabsTrigger value="model">
-                    <Layers className="size-3.5" />
-                    按模型
-                  </TabsTrigger>
-                  <TabsTrigger value="key">
-                    <KeyRound className="size-3.5" />按 Key
-                  </TabsTrigger>
-                  <TabsTrigger value="requests">
-                    <Activity className="size-3.5" />
-                    请求
-                  </TabsTrigger>
-                </TabsList>
+                <SegmentedControl
+                  ariaLabel="明细视图"
+                  value={tab}
+                  onChange={setTab}
+                  items={[
+                    {
+                      label: (
+                        <>
+                          <Layers className="size-3.5" />
+                          按模型
+                        </>
+                      ),
+                      value: "model",
+                    },
+                    {
+                      label: (
+                        <>
+                          <KeyRound className="size-3.5" />
+                          按 Key
+                        </>
+                      ),
+                      value: "key",
+                    },
+                    {
+                      label: (
+                        <>
+                          <Activity className="size-3.5" />
+                          请求
+                        </>
+                      ),
+                      value: "requests",
+                    },
+                  ]}
+                />
                 {tab !== "requests" && (
                   <Select value={sort} onValueChange={setSort}>
                     <SelectTrigger
@@ -713,6 +714,8 @@ function App() {
                   {shown.map((r, i) => (
                     <TableRow
                       key={tab === "requests" ? `${r.ts}-${i}` : r.name}
+                      className="animate-in fade-in duration-500"
+                      style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
                     >
                       {tab === "requests" ? (
                         <>
@@ -789,7 +792,7 @@ function App() {
                   )}
                 </TableBody>
               </Table>
-            </Tabs>
+            </div>
             <Separator />
             <div className="flex items-center justify-between px-6 py-3 text-xs text-muted-foreground">
               <span>{fmt(rows.length)} 条记录 · Key 已匿名化</span>

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- Extract the sliding segmented control into a shared component; the hour/day/month switcher now slides like the range picker (it was an instant swap before).
+- Speed up chart animations (450ms, ease-out).
+
 ## 0.3.2
 
 - Enable the shadcn animation layer (`tw-animate-css`) so existing `animate-in` / `fade-in` / `slide-in` classes actually work; re-enable chart animations (recharts was hard-disabled) and add light staggered entrance animations for the metric grid, chart and detail cards.
