@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { cn } from "cn";
 import {
   Activity,
   ArrowDownUp,
@@ -76,7 +77,10 @@ const chartConfig = {
   net: { label: "净输入", color: "var(--chart-2)" },
   output: { label: "输出", color: "var(--chart-3)" },
 };
-const initialRange = () => ({ from: subDays(new Date(), 6), to: new Date() });
+const initialRange = () => {
+  const today = new Date();
+  return { from: today, to: today };
+};
 function Help({ children }) {
   return (
     <Tooltip>
@@ -94,7 +98,38 @@ function Help({ children }) {
     </Tooltip>
   );
 }
-function Metric({ label, value, detail, help, loading }) {
+function useCountUp(target, duration = 550) {
+  const [value, setValue] = useState(target);
+  const prev = useRef(target);
+  useEffect(() => {
+    const from = prev.current;
+    prev.current = target;
+    if (from === target) {
+      setValue(target);
+      return;
+    }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setValue(target);
+      return;
+    }
+    let raf;
+    const start = performance.now();
+    const tick = (now) => {
+      const progress = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setValue(from + (target - from) * eased);
+      if (progress < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, duration]);
+  return value;
+}
+
+function Metric({ label, value, raw, format, detail, help, loading }) {
+  const animated = useCountUp(typeof raw === "number" ? raw : 0);
+  const display =
+    typeof raw === "number" && format ? format(animated) : value;
   return (
     <Card className="gap-3 shadow-none">
       <CardHeader className="flex flex-row items-center justify-between pb-0">
@@ -109,7 +144,7 @@ function Metric({ label, value, detail, help, loading }) {
             className="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums"
             title={String(value)}
           >
-            {value}
+            {display}
           </div>
         )}
         <p className="mt-2 text-xs text-muted-foreground">{detail}</p>
@@ -162,7 +197,7 @@ function App() {
   const [range, setRange] = useState(initialRange),
     [draft, setDraft] = useState(initialRange),
     [calendarOpen, setCalendarOpen] = useState(false),
-    [bucket, setBucket] = useState("day"),
+    [bucket, setBucket] = useState("hour"),
     [model, setModel] = useState("all"),
     [data, setData] = useState(null),
     [error, setError] = useState(""),
@@ -265,6 +300,19 @@ function App() {
     data?.configured && data?.collected_at && !data?.collect_err && !error;
   const quick = (days) =>
     setRange({ from: subDays(new Date(), days - 1), to: new Date() });
+  const todayKey = dateKey(new Date());
+  const fromKey = dateKey(range.from);
+  const toKey = dateKey(range.to);
+  const spansToday = toKey === todayKey;
+  const activeQuick =
+    spansToday && fromKey === todayKey
+      ? 1
+      : spansToday && fromKey === dateKey(subDays(new Date(), 6))
+        ? 7
+        : spansToday && fromKey === dateKey(subDays(new Date(), 29))
+          ? 30
+          : 0;
+  const quickIdx = activeQuick === 1 ? 0 : activeQuick === 7 ? 1 : activeQuick === 30 ? 2 : -1;
   return (
     <TooltipProvider>
       <div className="min-h-dvh">
@@ -331,16 +379,38 @@ function App() {
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex gap-1">
-              <Button variant="ghost" size="sm" onClick={() => quick(1)}>
-                今天
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => quick(7)}>
-                近 7 天
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => quick(30)}>
-                近 30 天
-              </Button>
+            <div
+              role="group"
+              aria-label="时间范围"
+              className="relative grid w-fit grid-cols-3 rounded-md bg-muted p-[3px]"
+            >
+              {quickIdx >= 0 && (
+                <span
+                  aria-hidden
+                  className="absolute inset-y-[3px] left-[3px] w-[calc((100%-6px)/3)] rounded-[5px] bg-background shadow-sm transition-transform duration-200 ease-out"
+                  style={{ transform: `translateX(${quickIdx * 100}%)` }}
+                />
+              )}
+              {[
+                ["今天", 1],
+                ["近 7 天", 7],
+                ["近 30 天", 30],
+              ].map(([label, days]) => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => quick(days)}
+                  aria-pressed={activeQuick === days}
+                  className={cn(
+                    "relative z-10 h-7 rounded-[5px] text-sm transition-colors",
+                    activeQuick === days
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <Popover
               open={calendarOpen}
@@ -430,11 +500,13 @@ function App() {
           )}
           <section
             aria-label="核心指标"
-            className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+            className="animate-in fade-in slide-in-from-bottom-2 duration-500 grid grid-cols-2 gap-3 lg:grid-cols-4"
           >
             <Metric
               label="总 Token"
               value={compact(total)}
+              raw={total}
+              format={compact}
               detail={`输入 ${compact(stats.input)} / 输出 ${compact(stats.output)}`}
               help={`精确值 ${fmt(total)}。输入包含缓存，输出包含推理，不重复累加。`}
               loading={loading}
@@ -442,6 +514,8 @@ function App() {
             <Metric
               label="请求次数"
               value={fmt(stats.n)}
+              raw={stats.n}
+              format={(v) => fmt(Math.round(v))}
               detail={`${fmt(groups(events, "model").length)} 个模型参与调用`}
               help="包含成功、失败和零 Token 请求。"
               loading={loading}
@@ -449,6 +523,8 @@ function App() {
             <Metric
               label="请求成功率"
               value={rate === null ? "暂无" : rate + "%"}
+              raw={rate ?? undefined}
+              format={(v) => v.toFixed(1) + "%"}
               detail={`${fmt(stats.fail)} 次失败 / ${fmt(stats.n - stats.fail)} 次成功`}
               help="按 CPA 返回的 failed 标记统计，不推断错误原因。"
               loading={loading}
@@ -460,12 +536,14 @@ function App() {
                   ? ((stats.cache / stats.input) * 100).toFixed(1) + "%"
                   : "暂无"
               }
+              raw={stats.input ? (stats.cache / stats.input) * 100 : undefined}
+              format={(v) => v.toFixed(1) + "%"}
               detail={`复用 ${compact(stats.cache)} 输入 Token`}
               help="缓存读取 Token / 输入 Token。缓存是输入的一部分。"
               loading={loading}
             />
           </section>
-          <Card className="shadow-none">
+          <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-delay:80ms] shadow-none">
             <CardHeader className="flex flex-wrap flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle className="text-base">Token 趋势</CardTitle>
@@ -528,7 +606,6 @@ function App() {
                           stroke={`var(--color-${k})`}
                           fill={`var(--color-${k})`}
                           fillOpacity={k === "output" ? 0.8 : 0.6}
-                          isAnimationActive={false}
                         />
                       ))}
                     </AreaChart>
@@ -556,7 +633,7 @@ function App() {
               )}
             </CardContent>
           </Card>
-          <Card className="gap-0 overflow-hidden shadow-none">
+          <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-delay:160ms] gap-0 overflow-hidden shadow-none">
             <CardHeader className="pb-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
