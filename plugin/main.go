@@ -318,6 +318,15 @@ func handleUsage(req []byte) {
 		return
 	}
 	digest := sha1.Sum(payload)
+	// Keep the existing dedup identity when adding optional protocol metadata.
+	if u.Provider != "" || u.ExecutorType != "" {
+		event["provider"] = u.Provider
+		event["executor_type"] = u.ExecutorType
+		payload, err = json.Marshal(event)
+		if err != nil {
+			return
+		}
+	}
 
 	ensureDB()
 	mu.Lock()
@@ -430,15 +439,17 @@ func managementResponse(status int, contentType string, body []byte) ([]byte, er
 // ---- usage api (compatible with cpa-usage frontend contract) ----
 
 type dbEvent struct {
-	Timestamp string         `json:"timestamp"`
-	Model     string         `json:"model"`
-	Alias     string         `json:"alias"`
-	Source    string         `json:"source"`
-	APIKey    string         `json:"api_key"`
-	Failed    bool           `json:"failed"`
-	LatencyMs float64        `json:"latency_ms"`
-	TTFTMs    float64        `json:"ttft_ms"`
-	Tokens    map[string]any `json:"tokens"`
+	Timestamp    string         `json:"timestamp"`
+	Model        string         `json:"model"`
+	Provider     string         `json:"provider"`
+	ExecutorType string         `json:"executor_type"`
+	Alias        string         `json:"alias"`
+	Source       string         `json:"source"`
+	APIKey       string         `json:"api_key"`
+	Failed       bool           `json:"failed"`
+	LatencyMs    float64        `json:"latency_ms"`
+	TTFTMs       float64        `json:"ttft_ms"`
+	Tokens       map[string]any `json:"tokens"`
 }
 
 type outEvent struct {
@@ -568,11 +579,17 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 			if t := e.Tokens; t != nil {
 				input = toI64(t["input_tokens"])
 				output = toI64(t["output_tokens"])
-				cache = toI64(t["cache_read_tokens"])
-				if cache == 0 {
-					cache = toI64(t["cached_tokens"])
+				read := toI64(t["cache_read_tokens"])
+				cached := toI64(t["cached_tokens"])
+				creation := toI64(t["cache_creation_tokens"])
+				cache = read
+				if cache == 0 && cached > 0 && creation == 0 {
+					cache = cached
 				}
 				reasoning = toI64(t["reasoning_tokens"])
+				if addInputCache(e, input, output, cache, creation, reasoning) {
+					input += cache + creation
+				}
 			}
 			events = append(events, outEvent{
 				Ts: ts, Model: model, Key: anonKey(source),
@@ -618,6 +635,37 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 		"timezone":     time.Now().Format("MST"),
 	}
 	return json.Marshal(resp)
+}
+
+func addInputCache(e dbEvent, input, output, cache, creation, reasoning int64) bool {
+	cachedInput := cache + creation
+	if cachedInput <= 0 {
+		return false
+	}
+	total := toI64(e.Tokens["total_tokens"])
+	// An inclusive total must never receive cache a second time.
+	if total > 0 && total == input+output {
+		return false
+	}
+	provider := strings.ToLower(strings.TrimSpace(e.Provider))
+	executor := strings.ToLower(strings.TrimSpace(e.ExecutorType))
+	if executor == "openaicompatexecutor" || provider == "openai-compatibility" || strings.HasPrefix(provider, "openai-compatible-") {
+		return false
+	}
+	protocol := provider + " " + executor
+	if strings.Contains(protocol, "claude") || strings.Contains(protocol, "anthropic") {
+		return total == 0 || total == input+output+cachedInput
+	}
+	if provider != "" || executor != "" {
+		return false
+	}
+	// Old rows have no protocol identity. Only repair counts that cannot be
+	// an input subset; total equality alone also matches Gemini reasoning.
+	if cachedInput <= input {
+		return false
+	}
+	return (total == 0 && input == 0) ||
+		(total == input+output+cachedInput && total != input+output+reasoning)
 }
 
 func parseAnyTime(s string) (float64, error) {
