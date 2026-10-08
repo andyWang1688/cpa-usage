@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.4
 
 - Fix Claude input and total tokens to include cache reads and creation; cache creation no longer counts as a cache hit (#14).
 - Preserve provider/executor identity for new events and avoid double-counting OpenAI-compatible or Gemini input. Historical rows without protocol identity are corrected only when the counters disambiguate the input convention; ambiguous rows retain their original input. No database migration or rewrite of stored counters is required.
+- Inject the release version into the plugin binary so registration and usage APIs report the published version.
 
 ## 0.3.3
 

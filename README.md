@@ -98,13 +98,13 @@ cp dist/assets/* ../plugin/web/assets/
 
 ### 发布新版本
 
-版本号存于 `VERSION`，与 git tag（`v{version}`）一致。推送 tag 即触发 Release 流水线：三平台（darwin/arm64、linux/amd64、linux/arm64）构建插件、生成 `checksums.txt` 并发布 Release。
+版本号存于 `VERSION`，与 git tag（`v{version}`）一致。推送 tag 即触发 Release 流水线：五个平台（darwin/arm64、darwin/amd64、linux/amd64、linux/arm64、windows/amd64）构建插件并注入版本号、生成 `checksums.txt` 并发布 Release。
 
 ```sh
 # 1. 更新 VERSION、CHANGELOG.md，提交并合并到 main
 # 2. 打 tag 推送，流水线自动发布
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.3.4
+git push origin v0.3.4
 # 3. 更新插件商店 registry 中的 version 字段
 ```
 

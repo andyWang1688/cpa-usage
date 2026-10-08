@@ -58,7 +58,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p /tmp/plugin-release
-          go build -buildmode=c-shared -o "/tmp/plugin-release/usage-report-v${VERSION}.${{ matrix.ext }}" .
+          go build -ldflags "-X main.version=${VERSION}" -buildmode=c-shared -o "/tmp/plugin-release/usage-report-v${VERSION}.${{ matrix.ext }}" .
           cd /tmp/plugin-release
           zip "usage-report_${VERSION}_${{ matrix.goos }}_${{ matrix.goarch }}.zip" "usage-report-v${VERSION}.${{ matrix.ext }}"
           ls -la
