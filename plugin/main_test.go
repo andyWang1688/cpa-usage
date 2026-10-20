@@ -21,9 +21,9 @@ func TestRegister(t *testing.T) {
 func mgmtReq(path, method string) []byte {
 	req, _ := json.Marshal(map[string]interface{}{
 		"result": map[string]interface{}{
-			"Method": method,
-			"Path":   path,
-			"Query":  map[string][]string{"start": {"2026-09-09"}, "end": {"2026-09-18"}, "bucket": {"day"}},
+			"Method":  method,
+			"Path":    path,
+			"Query":   map[string][]string{"start": {"2026-09-09"}, "end": {"2026-09-18"}, "bucket": {"day"}},
 			"Headers": map[string][]string{},
 			"Body":    nil,
 		},
@@ -63,7 +63,7 @@ func TestManagementReport(t *testing.T) {
 	}
 	t.Logf("page ok: %d bytes, %s", len(body), ct)
 
-	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-x8ooMryE.js", "GET")
+	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-WH-FNvxu.js", "GET")
 	if status != 200 || len(js) < 100000 {
 		t.Fatalf("js: %d %s %d bytes", status, ct, len(js))
 	}
@@ -152,8 +152,8 @@ func TestManagementRegisterRoutes(t *testing.T) {
 	if err := json.Unmarshal(e.Result, &reg); err != nil {
 		t.Fatal(err)
 	}
-	if len(reg.Routes) != 3 {
-		t.Fatalf("expect 3 authenticated routes, got %d", len(reg.Routes))
+	if len(reg.Routes) != 6 {
+		t.Fatalf("expect 6 authenticated routes, got %d", len(reg.Routes))
 	}
 	for _, r := range reg.Routes {
 		if r.Method != "GET" && r.Method != "POST" {

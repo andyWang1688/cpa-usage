@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { summarize, groups, trend, dateKey } from "./analytics.js";
+import { summarize, groups, trend, dateKey, money } from "./analytics.js";
 const fixture = [
   {
     ts: new Date(2026, 0, 1, 12).getTime() / 1000,
@@ -36,3 +36,28 @@ test("grouping and trend use same total", () => {
 });
 test("local date does not use UTC slicing", () =>
   assert.equal(dateKey(new Date(2026, 0, 1)), "2026-01-01"));
+test("fees and missing price coverage follow the same filters and grouping", () => {
+  const events = [
+    { ...fixture[0], cost: 1.77, price_basis: "historical_estimate" },
+    { ...fixture[1], cost: 0 },
+    { ...fixture[0], model: "unpriced", cost: null },
+  ];
+  const total = summarize(events);
+  assert.equal(total.cost, 1.77);
+  assert.equal(total.priced, 2);
+  assert.equal(total.unpriced, 1);
+  assert.equal(total.historical, 1);
+  const known = summarize(events.filter((e) => e.model === "a"));
+  assert.equal(known.unpriced, 0);
+  assert.equal(groups(events, "model").find((g) => g.name === "unpriced").priced, 0);
+  assert.equal(trend(events, "day")[0].cost, total.cost);
+  assert.equal(trend(events, "day")[0].unpriced, 1);
+});
+test("unpriced trend buckets remain gaps and free buckets remain zero", () => {
+  const buckets = trend([{ ...fixture[0], cost: null }, { ...fixture[1], cost: 0 }], "hour");
+  assert.equal(buckets[0].cost, null);
+  assert.equal(buckets[1].cost, 0);
+  assert.equal(money(null), "未定价");
+  assert.equal(money(0), "$0.00");
+  assert.equal(money(0.0000001), "< $0.000001");
+});

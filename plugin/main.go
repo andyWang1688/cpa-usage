@@ -166,11 +166,14 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 		return okEnvelopeJSON(`{"routes":[
 			{"Method":"GET","Path":"/plugins/usage-report/api/usage","Menu":"","Description":"usage data api"},
 			{"Method":"GET","Path":"/plugins/usage-report/api/health","Menu":"","Description":"health"},
-			{"Method":"POST","Path":"/plugins/usage-report/api/collect","Menu":"","Description":"collect trigger"}
+			{"Method":"POST","Path":"/plugins/usage-report/api/collect","Menu":"","Description":"collect trigger"},
+			{"Method":"GET","Path":"/plugins/usage-report/api/pricing","Menu":"","Description":"model prices"},
+			{"Method":"POST","Path":"/plugins/usage-report/api/pricing","Menu":"","Description":"custom model price"},
+			{"Method":"POST","Path":"/plugins/usage-report/api/pricing/refresh","Menu":"","Description":"refresh public prices"}
 		],"resources":[
 			{"Path":"/report","Menu":"Usage Report","Description":"CPA usage dashboard"},
-			{"Path":"/assets/index-x8ooMryE.js","Menu":"","Description":"dashboard js"},
-			{"Path":"/assets/index-B7tZGLVi.css","Menu":"","Description":"dashboard css"}
+			{"Path":"/assets/index-WH-FNvxu.js","Menu":"","Description":"dashboard js"},
+			{"Path":"/assets/index-DWD1CSj_.css","Menu":"","Description":"dashboard css"}
 		]}`)
 	case "usage.handle":
 		handleUsage(req)
@@ -243,6 +246,9 @@ func openDB(path string) {
 		return
 	}
 	_, err = conn.Exec("CREATE TABLE IF NOT EXISTS usage_events (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, dedup TEXT UNIQUE, payload TEXT)")
+	if err == nil {
+		err = initPricing(conn)
+	}
 	if err != nil {
 		lastErr = "sqlite migrate: " + err.Error()
 		_ = conn.Close()
@@ -378,6 +384,7 @@ func handleManagement(req []byte) ([]byte, error) {
 		Method string
 		Path   string
 		Query  map[string][]string
+		Body   []byte
 	}
 	if err := json.Unmarshal(rec, &m); err != nil {
 		return errorEnvelope("bad_request", err.Error()), nil
@@ -390,15 +397,15 @@ func handleManagement(req []byte) ([]byte, error) {
 		}
 		return managementResponse(200, "text/html; charset=utf-8", html)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-x8ooMryE.js") {
-		js, err := webFS.ReadFile("web/assets/index-x8ooMryE.js")
+	if strings.HasSuffix(m.Path, "/assets/index-WH-FNvxu.js") {
+		js, err := webFS.ReadFile("web/assets/index-WH-FNvxu.js")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}
 		return managementResponse(200, "application/javascript; charset=utf-8", js)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-B7tZGLVi.css") {
-		css, err := webFS.ReadFile("web/assets/index-B7tZGLVi.css")
+	if strings.HasSuffix(m.Path, "/assets/index-DWD1CSj_.css") {
+		css, err := webFS.ReadFile("web/assets/index-DWD1CSj_.css")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}
@@ -418,6 +425,31 @@ func handleManagement(req []byte) ([]byte, error) {
 		if err != nil {
 			b, _ := json.Marshal(map[string]interface{}{"error": err.Error()})
 			return managementResponse(400, "application/json; charset=utf-8", b)
+		}
+		return managementResponse(200, "application/json; charset=utf-8", body)
+	}
+	if strings.HasSuffix(m.Path, "/api/pricing") || strings.HasSuffix(m.Path, "/api/pricing/refresh") {
+		ensureDB()
+		var err error
+		status := 400
+		switch {
+		case strings.HasSuffix(m.Path, "/pricing/refresh") && m.Method == "POST":
+			err = refreshPrices()
+			status = 502
+		case strings.HasSuffix(m.Path, "/api/pricing") && m.Method == "POST":
+			err = setCustomPrice(m.Body)
+		case strings.HasSuffix(m.Path, "/api/pricing") && m.Method == "GET":
+			maybeRefreshPrices()
+		default:
+			return managementResponse(405, "application/json", []byte(`{"error":"请求方法不支持"}`))
+		}
+		if err != nil {
+			body, _ := json.Marshal(map[string]string{"error": err.Error()})
+			return managementResponse(status, "application/json", body)
+		}
+		body, err := pricingResponse()
+		if err != nil {
+			return nil, err
 		}
 		return managementResponse(200, "application/json; charset=utf-8", body)
 	}
@@ -453,24 +485,29 @@ type dbEvent struct {
 }
 
 type outEvent struct {
-	Ts        float64 `json:"ts"`
-	Model     string  `json:"model"`
-	Key       string  `json:"key"`
-	Input     int64   `json:"input"`
-	Output    int64   `json:"output"`
-	Cache     int64   `json:"cache"`
-	Reasoning int64   `json:"reasoning"`
-	Failed    bool    `json:"failed"`
-	LatencyMs float64 `json:"latency_ms"`
-	TTFTMs    float64 `json:"ttft_ms"`
+	costQuote
+	Ts            float64 `json:"ts"`
+	Model         string  `json:"model"`
+	Provider      string  `json:"provider"`
+	Key           string  `json:"key"`
+	Input         int64   `json:"input"`
+	Output        int64   `json:"output"`
+	Cache         int64   `json:"cache"`
+	CacheCreation int64   `json:"cache_creation"`
+	Reasoning     int64   `json:"reasoning"`
+	Failed        bool    `json:"failed"`
+	LatencyMs     float64 `json:"latency_ms"`
+	TTFTMs        float64 `json:"ttft_ms"`
 }
 
 type outBucket struct {
-	Label    string `json:"label"`
-	Input    int64  `json:"input"`
-	Output   int64  `json:"output"`
-	Cache    int64  `json:"cache"`
-	Requests int64  `json:"requests"`
+	Label    string   `json:"label"`
+	Input    int64    `json:"input"`
+	Output   int64    `json:"output"`
+	Cache    int64    `json:"cache"`
+	Requests int64    `json:"requests"`
+	Cost     *float64 `json:"cost"`
+	Unpriced int64    `json:"unpriced"`
 }
 
 func anonKey(source string) string {
@@ -530,11 +567,16 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 	skipped := 0
 
 	ensureDB()
+	maybeRefreshPrices()
 	mu.Lock()
 	var rows *sql.Rows
 	var err error
+	var prices *priceBook
 	if db != nil {
-		rows, err = db.Query("SELECT ts, payload FROM usage_events ORDER BY id")
+		prices, err = loadPriceBook(db)
+		if err == nil {
+			rows, err = db.Query("SELECT ts, payload FROM usage_events ORDER BY id")
+		}
 	}
 	mu.Unlock()
 	if err != nil {
@@ -575,13 +617,13 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 			if source == "" {
 				source = e.APIKey
 			}
-			var input, output, cache, reasoning int64
+			var input, output, cache, creation, reasoning int64
 			if t := e.Tokens; t != nil {
 				input = toI64(t["input_tokens"])
 				output = toI64(t["output_tokens"])
 				read := toI64(t["cache_read_tokens"])
 				cached := toI64(t["cached_tokens"])
-				creation := toI64(t["cache_creation_tokens"])
+				creation = toI64(t["cache_creation_tokens"])
 				cache = read
 				if cache == 0 && cached > 0 && creation == 0 {
 					cache = cached
@@ -591,11 +633,17 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 					input += cache + creation
 				}
 			}
-			events = append(events, outEvent{
+			event := outEvent{
 				Ts: ts, Model: model, Key: anonKey(source),
 				Input: input, Output: output, Cache: cache, Reasoning: reasoning,
+				Provider: e.Provider, CacheCreation: creation,
 				Failed: e.Failed, LatencyMs: e.LatencyMs, TTFTMs: e.TTFTMs,
-			})
+			}
+			event.costQuote, err = prices.quote(event)
+			if err != nil {
+				return nil, err
+			}
+			events = append(events, event)
 			t := time.Unix(int64(ts), 0)
 			var label string
 			switch bucket {
@@ -616,6 +664,15 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 			bk.Output += output
 			bk.Cache += cache
 			bk.Requests++
+			if event.Cost != nil {
+				if bk.Cost == nil {
+					zero := 0.0
+					bk.Cost = &zero
+				}
+				*bk.Cost += *event.Cost
+			} else {
+				bk.Unpriced++
+			}
 		}
 	}
 	sort.Strings(order)

@@ -7,7 +7,7 @@
 - **零额外进程**：原生动态库（`.dylib` / `.so`）运行在 CPA 进程内，无需 Python、Node.js、Docker 或独立服务。
 - 真实 shadcn/ui 界面：Token 趋势、模型 / 匿名 Key / 请求明细与筛选。
 
-**状态：v0.2.0 / CLIProxyAPI 7.x / macOS 与 Linux。MIT 开源。**
+**版本：v0.4.0 / CLIProxyAPI 7.x / macOS、Linux 与 Windows。MIT 开源。**
 
 ## 安装
 
@@ -36,9 +36,9 @@ plugins:
 从 [Releases](https://github.com/andyWang1688/cpa-usage/releases) 下载对应平台的 `usage-report_{version}_{goos}_{goarch}.zip`，解压后放入插件目录：
 
 ```bash
-unzip usage-report_0.2.0_darwin_arm64.zip
+unzip usage-report_0.4.0_darwin_arm64.zip
 mkdir -p <plugins-dir>/darwin/arm64
-cp usage-report-v0.2.0.dylib <plugins-dir>/darwin/arm64/
+cp usage-report-v0.4.0.dylib <plugins-dir>/darwin/arm64/
 # Linux 为 .so，目录名相应为 linux/amd64 或 linux/arm64
 ```
 
@@ -62,7 +62,26 @@ go build -buildmode=c-shared -o usage-report.dylib .   # macOS；Linux 产物为
 - 模型、匿名 Key、请求三个视角；搜索、排序与分页。
 - 全部请求参与成功率统计，包括零 Token 失败；输入含缓存，输出含推理，不重复相加。
 - 错误、空数据与采集异常明确显示，不把空白或旧数据当实时成功。
-- 不预置价格，不把未知模型的用量伪装成实际账单。
+- 预估费用卡片、Token / 费用趋势切换；模型、匿名 Key、请求明细显示费用并支持费用排序。
+- 价格表弹窗可查看已调用模型的公开单价、更新价格、设置自定义价格；未定价与部分费用明确标注。
+- 支持 USD / CNY 切换，默认汇率 1 USD = 7.20 CNY，可手动修改并保存在当前浏览器；费用、趋势和价格表同步换算。人民币编辑单价会换算为美元保存，历史费用按当前显示汇率换算，不采用历史结算汇率。
+
+### 费用口径
+
+费用为 **USD 标准文本 Token 估算**，不代表订阅支出或供应商实际账单。计算公式为：
+
+```text
+费用 = (普通输入 × 输入价 + 缓存读取 × 读取价 + 缓存写入 × 写入价 + 输出 × 输出价) / 1,000,000
+普通输入 = 归一化输入 - 缓存读取 - 缓存写入
+```
+
+- 单价单位为 USD / 百万 Token。推理已包含在输出中，不重复计费；失败请求按实际返回的 Token 计算，零 Token 请求费用为 0。
+- 内置 [LiteLLM 公开价格快照](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json)，仅匹配明确的模型名或提供方前缀，不猜测模型别名。页面使用期间每 24 小时检查更新，也可手动更新；失败保留本地价格并显示错误。只向固定价格源请求公开数据，不发送本地用量或 Key。
+- 价格更新遵循运行进程的 `HTTPS_PROXY`、`HTTP_PROXY`、`NO_PROXY` 环境变量；需要代理访问 GitHub 时，在启动服务或 CPA 前设置这些变量。
+- 支持价格源中的长上下文阶梯；使用标准服务档位与默认缓存写入单价。现有采集没有缓存 TTL、服务档位、工具用量等信息，无法还原 1 小时缓存、Batch / Priority / Flex、图片 / 音频 / 视频 / 工具调用等额外费用。
+- 自定义价格按“模型 + 提供方”保存，覆盖该组合的公开价格；恢复公开价格会创建新版本。自定义为固定单价，不保留公开阶梯。缓存单价留空表示未知，0 表示免费。
+- 每次价格变动保存不可变版本，已计价请求按当时版本计算。首次接入前或当时缺价的历史请求使用首个完整可用价格，并标注“历史估算”；后续改价不会改变这些已计价历史费用。历史用量原始记录不修改。
+- 任一实际使用的 Token 类别缺价，该请求显示“未定价”；总额只累计完整计价的请求，并显示覆盖数量与“部分费用”。全缺价的趋势桶保留空值。
 
 ## 配置
 
@@ -103,8 +122,8 @@ cp dist/assets/* ../plugin/web/assets/
 ```sh
 # 1. 更新 VERSION、CHANGELOG.md，提交并合并到 main
 # 2. 打 tag 推送，流水线自动发布
-git tag v0.3.4
-git push origin v0.3.4
+git tag v0.4.0
+git push origin v0.4.0
 # 3. 更新插件商店 registry 中的 version 字段
 ```
 

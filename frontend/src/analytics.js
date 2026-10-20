@@ -4,6 +4,18 @@ export const compact = (n) =>
     notation: "compact",
     maximumFractionDigits: 2,
   }).format(n || 0);
+export const DEFAULT_FX_RATE = 7.2;
+export const convertUSD = (n, currency = "USD", fxRate = DEFAULT_FX_RATE) =>
+  Number.isFinite(n) && currency === "CNY" ? n * fxRate : n;
+export const money = (n, currency = "USD", fxRate = DEFAULT_FX_RATE, maximumFractionDigits = 6) => {
+  if (!Number.isFinite(n)) return "未定价";
+  const value = convertUSD(n, currency, fxRate);
+  const symbol = currency === "CNY" ? "¥" : "$";
+  if (value > 0 && value < 0.000001) return `< ${symbol}0.000001`;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: currency === "CNY" ? "CNY" : "USD", currencyDisplay: "narrowSymbol", minimumFractionDigits: 2, maximumFractionDigits,
+  }).format(value);
+};
 export const dateKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export function summarize(events) {
@@ -15,8 +27,12 @@ export function summarize(events) {
       cache: s.cache + e.cache,
       reasoning: s.reasoning + e.reasoning,
       fail: s.fail + Number(e.failed),
+      cost: s.cost + (Number.isFinite(e.cost) ? e.cost : 0),
+      priced: s.priced + Number(Number.isFinite(e.cost)),
+      unpriced: s.unpriced + Number(!Number.isFinite(e.cost)),
+      historical: s.historical + Number(e.price_basis === "historical_estimate"),
     }),
-    { n: 0, input: 0, output: 0, cache: 0, reasoning: 0, fail: 0 },
+    { n: 0, input: 0, output: 0, cache: 0, reasoning: 0, fail: 0, cost: 0, priced: 0, unpriced: 0, historical: 0 },
   );
 }
 export function groups(events, key) {
@@ -40,12 +56,14 @@ export function trend(events, bucket) {
             ? `${dateKey(d)} ${String(d.getHours()).padStart(2, "0")}:00`
             : dateKey(d);
     if (!map.has(label))
-      map.set(label, { label, cache: 0, net: 0, output: 0, requests: 0 });
+      map.set(label, { label, cache: 0, net: 0, output: 0, requests: 0, cost: null, unpriced: 0 });
     const b = map.get(label);
     b.cache += e.cache;
     b.net += Math.max(0, e.input - e.cache);
     b.output += e.output;
     b.requests++;
+    if (Number.isFinite(e.cost)) b.cost = (b.cost ?? 0) + e.cost;
+    else b.unpriced++;
   }
   return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
 }
