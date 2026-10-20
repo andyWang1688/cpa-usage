@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Add estimated token costs to the dashboard, trends, and model/key/request details (#17). Show pricing coverage and distinguish unpriced requests from zero cost.
+- Bundle LiteLLM text-model prices, support automatic and manual updates, provider-specific custom rates, and versioned historical estimates. Failed updates retain local prices and show a friendly message.
+- Support USD/CNY display with an editable exchange rate. Show currency symbols beside table prices and currency/token units on price columns and edit fields.
+- Document token-estimation limits and proxy environment variables for public price updates.
+
 ## 0.3.4
 
 - Fix Claude input and total tokens to include cache reads and creation; cache creation no longer counts as a cache hit (#14).
