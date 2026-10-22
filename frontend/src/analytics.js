@@ -1,20 +1,26 @@
-export const fmt = (n) => Number(n || 0).toLocaleString("zh-CN");
-export const compact = (n) =>
-  new Intl.NumberFormat("en", {
+export const fmt = (n, locale = "zh-CN") => Number(n || 0).toLocaleString(locale);
+export const compact = (n, locale = "en") =>
+  new Intl.NumberFormat(locale, {
     notation: "compact",
     maximumFractionDigits: 2,
   }).format(n || 0);
-export const DEFAULT_FX_RATE = 7.2;
-export const convertUSD = (n, currency = "USD", fxRate = DEFAULT_FX_RATE) =>
-  Number.isFinite(n) && currency === "CNY" ? n * fxRate : n;
-export const money = (n, currency = "USD", fxRate = DEFAULT_FX_RATE, maximumFractionDigits = 6) => {
-  if (!Number.isFinite(n)) return "未定价";
+export const CURRENCIES = ["USD", "CNY", "BRL"];
+// USD → currency rates used until the user sets their own.
+export const DEFAULT_FX_RATES = { CNY: 7.2, BRL: 5.5 };
+export const DEFAULT_FX_RATE = DEFAULT_FX_RATES.CNY;
+export const convertUSD = (n, currency = "USD", fxRate = DEFAULT_FX_RATES[currency]) =>
+  Number.isFinite(n) && currency !== "USD" ? n * fxRate : n;
+const currencyFormat = (currency, locale, display, maximumFractionDigits = 6) =>
+  new Intl.NumberFormat(locale, {
+    style: "currency", currency: CURRENCIES.includes(currency) ? currency : "USD", currencyDisplay: display, minimumFractionDigits: 2, maximumFractionDigits,
+  });
+export const currencySymbol = (currency, { locale = "en-US", display = "narrowSymbol" } = {}) =>
+  currencyFormat(currency, locale, display).formatToParts(0).find((p) => p.type === "currency")?.value ?? currency;
+export const money = (n, currency = "USD", fxRate = DEFAULT_FX_RATES[currency], maximumFractionDigits = 6, { locale = "en-US", display = "narrowSymbol", unpriced = "未定价" } = {}) => {
+  if (!Number.isFinite(n)) return unpriced;
   const value = convertUSD(n, currency, fxRate);
-  const symbol = currency === "CNY" ? "¥" : "$";
-  if (value > 0 && value < 0.000001) return `< ${symbol}0.000001`;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency", currency: currency === "CNY" ? "CNY" : "USD", currencyDisplay: "narrowSymbol", minimumFractionDigits: 2, maximumFractionDigits,
-  }).format(value);
+  if (value > 0 && value < 0.000001) return `< ${currencyFormat(currency, locale, display).format(0.000001)}`;
+  return currencyFormat(currency, locale, display, maximumFractionDigits).format(value);
 };
 export const dateKey = (d) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
