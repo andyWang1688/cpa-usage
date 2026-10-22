@@ -6,6 +6,7 @@
 - **实时采集**：通过 `usage.handle` 插件回调，请求完成的瞬间写入数据库——无轮询、无队列窗口、不丢数据。
 - **零额外进程**：原生动态库（`.dylib` / `.so`）运行在 CPA 进程内，无需 Python、Node.js、Docker 或独立服务。
 - 真实 shadcn/ui 界面：Token 趋势、模型 / 匿名 Key / 请求明细与筛选。
+- 多语言界面：简体中文与葡萄牙语（巴西），默认跟随浏览器语言，可在页头切换。
 
 **版本：v0.4.0 / CLIProxyAPI 7.x / macOS、Linux 与 Windows。MIT 开源。**
 
@@ -23,7 +24,7 @@ plugins:
   configs:
     usage-report:
       enabled: true
-      db_path: "~/.cli-proxy-api/usage-report/usage.sqlite"
+      db_path: "~/.cli-proxy-api/usage-report.sqlite"
 ```
 
 2. 重启 CLIProxyAPI，打开管理面板 → **插件商店** → 找到 **CPA Usage Report** → 安装。
@@ -64,7 +65,7 @@ go build -buildmode=c-shared -o usage-report.dylib .   # macOS；Linux 产物为
 - 错误、空数据与采集异常明确显示，不把空白或旧数据当实时成功。
 - 预估费用卡片、Token / 费用趋势切换；模型、匿名 Key、请求明细显示费用并支持费用排序。
 - 价格表弹窗可查看已调用模型的公开单价、更新价格、设置自定义价格；未定价与部分费用明确标注。
-- 支持 USD / CNY 切换，默认汇率 1 USD = 7.20 CNY，可手动修改并保存在当前浏览器；费用、趋势和价格表同步换算。人民币编辑单价会换算为美元保存，历史费用按当前显示汇率换算，不采用历史结算汇率。
+- 支持 USD / CNY / BRL 切换，默认汇率 1 USD = 7.20 CNY、1 USD = 5.50 BRL，可分别手动修改并保存在当前浏览器；费用、趋势和价格表同步换算。以人民币或雷亚尔编辑的单价会换算为美元保存，历史费用按当前显示汇率换算，不采用历史结算汇率。
 
 ### 费用口径
 
@@ -88,12 +89,12 @@ go build -buildmode=c-shared -o usage-report.dylib .   # macOS；Linux 产物为
 | 字段 | 说明 |
 |---|---|
 | `plugins.configs.usage-report.enabled` | 是否启用插件 |
-| `plugins.configs.usage-report.db_path` | SQLite 路径，默认 `~/.cli-proxy-api/usage-report/usage.sqlite` |
+| `plugins.configs.usage-report.db_path` | SQLite 路径，默认 `~/.cli-proxy-api/usage-report.sqlite`，缺少的目录会自动创建。Docker 部署请指向持久化卷，例如 `/data/usage-report.sqlite` |
 | `plugins.store-sources` | 插件商店 registry 地址（安装/更新用） |
 
 ## 数据与安全
 
-- 用量事件保存在 `db_path` 指向的本地 SQLite（表 `usage_events`），页面 API 在返回前将 Key 转换为稳定的匿名分组（`key-xxxxxxxxxx` 或 `未知 Key`）。
+- 用量事件保存在 `db_path` 指向的本地 SQLite（表 `usage_events`）。“按 Key” 按客户端 API Key 分组，只保存其哈希与掩码（如 `sk******95`，与 CPA 管理面板一致）；“按账号” 按 CPA 实际使用的上游凭据分组，页面 API 在返回前将其转换为稳定的匿名分组（`key-xxxxxxxxxx` 或 `未知 Key`）。
 - 原始事件仅保存在本地，可能包含客户端 Key；不要将数据库公开上传。
 - 插件的资源页面无独立鉴权，仅在 CPA 管理域内可达；请勿将 CPA 管理端口暴露到公网。
 

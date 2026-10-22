@@ -10,15 +10,16 @@ import {
   CircleHelp,
   Database,
   KeyRound,
+  Languages,
   Layers,
   Moon,
   RefreshCw,
   Search,
   Sun,
+  UserRound,
   WifiOff,
 } from "lucide-react";
 import { format, subDays } from "date-fns";
-import { zhCN } from "date-fns/locale";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,21 +69,18 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart";
-import { compact, convertUSD, dateKey, fmt, groups, money, summarize, trend } from "./analytics";
-import { readCurrencySettings, saveCurrencySettings } from "./currency";
+import { convertUSD, dateKey, groups, summarize, trend } from "./analytics";
+import { fxRateFor, readCurrencySettings, saveCurrencySettings } from "./currency";
+import { createI18n, detectLanguage, LANGUAGES, saveLanguage, UNKNOWN_KEY } from "./i18n";
+import { I18nContext, useI18n } from "./i18n-context";
 import "./index.css";
 
-const chartConfig = {
-  cache: { label: "缓存输入", color: "var(--chart-1)" },
-  net: { label: "净输入", color: "var(--chart-2)" },
-  output: { label: "输出", color: "var(--chart-3)" },
-};
-const costChartConfig = { cost: { label: "预估费用", color: "var(--chart-3)" } };
 const initialRange = () => {
   const today = new Date();
   return { from: today, to: today };
 };
 function Help({ children }) {
+  const { t } = useI18n();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -90,7 +88,7 @@ function Help({ children }) {
           variant="ghost"
           size="icon"
           className="size-5 text-muted-foreground"
-          aria-label="指标说明"
+          aria-label={t("metricHelp")}
         >
           <CircleHelp className="size-3.5" />
         </Button>
@@ -154,8 +152,8 @@ function Metric({ label, value, raw, format, detail, help, loading, className = 
   );
 }
 const API_BASE = "/v0/management/plugins/usage-report/api";
-const KEY_PROMPT =
-  "请返回 CPA 管理中心重新登录并勾选“记住密码”，然后刷新本页面。";
+// Errors raised here carry an i18n message key; see errorText in i18n.js.
+const requestError = (code, params) => Object.assign(Error(code), { code, params });
 
 function xorBytes(bytes, keyBytes) {
   const output = new Uint8Array(bytes.length);
@@ -195,14 +193,15 @@ function readManagementKey() {
 }
 async function request(path, options = {}) {
   const key = readManagementKey();
-  if (!key) throw Error(KEY_PROMPT);
+  if (!key) throw requestError("keyPrompt");
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: { Authorization: `Bearer ${key}`, ...(options.body ? { "Content-Type": "application/json" } : {}) },
   });
-  if (response.status === 401 || response.status === 403) throw Error(KEY_PROMPT);
+  if (response.status === 401 || response.status === 403) throw requestError("keyPrompt");
   const data = await response.json();
-  if (!response.ok || data.error) throw Error(data.error || `服务返回 ${response.status}`);
+  if (data.error) throw Error(data.error);
+  if (!response.ok) throw requestError("serviceStatus", { status: response.status });
   return data;
 }
 
@@ -215,7 +214,7 @@ function App() {
     [currencySettings, setCurrencySettings] = useState(readCurrencySettings),
     [model, setModel] = useState("all"),
     [data, setData] = useState(null),
-    [error, setError] = useState(""),
+    [error, setError] = useState(null),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [query, setQuery] = useState(""),
@@ -224,15 +223,29 @@ function App() {
     [sort, setSort] = useState("tokens"),
     [dark, setDark] = useState(
       () => localStorage.getItem("cpa-usage-theme") === "dark",
-    );
+    ),
+    [lang, setLang] = useState(detectLanguage);
+  const i18n = useMemo(() => createI18n(lang), [lang]);
+  const { t, fmt, compact, money, percent, keyLabel, errorText, withSymbol, bucketTick, formats } = i18n;
+  const chartConfig = {
+    cache: { label: t("chartCache"), color: "var(--chart-1)" },
+    net: { label: t("chartNet"), color: "var(--chart-2)" },
+    output: { label: t("chartOutput"), color: "var(--chart-3)" },
+  };
+  const costChartConfig = { cost: { label: t("estimatedCost"), color: "var(--chart-3)" } };
   const generation = useRef(0);
-  const { currency, fxRate } = currencySettings;
+  const { currency } = currencySettings;
+  const fxRate = fxRateFor(currencySettings);
   const displayMoney = (n) => money(n, currency, fxRate);
   useEffect(() => saveCurrencySettings(currencySettings), [currencySettings]);
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("cpa-usage-theme", dark ? "dark" : "light");
   }, [dark]);
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    document.title = t("documentTitle");
+  }, [lang]);
   async function load() {
     const id = ++generation.current;
     setBusy(true);
@@ -240,10 +253,10 @@ function App() {
       const d = await request(`/usage?start=${dateKey(range.from)}&end=${dateKey(range.to)}&bucket=${bucket}`);
       if (id === generation.current) {
         setData(d);
-        setError("");
+        setError(null);
       }
     } catch (e) {
-      if (id === generation.current) setError(e.message);
+      if (id === generation.current) setError(e);
     } finally {
       if (id === generation.current) {
         setBusy(false);
@@ -263,7 +276,10 @@ function App() {
   }, [range, bucket]);
   const events = useMemo(
     () =>
-      (data?.events || []).filter((e) => model === "all" || e.model === model),
+      (data?.events || [])
+        .filter((e) => model === "all" || e.model === model)
+        // Requests recorded before client keys were stored have none.
+        .map((e) => (e.client ? e : { ...e, client: UNKNOWN_KEY })),
     [data, model],
   );
   const stats = useMemo(() => summarize(events), [events]),
@@ -283,9 +299,9 @@ function App() {
     let result =
       tab === "requests"
         ? [...events].reverse()
-        : groups(events, tab === "model" ? "model" : "key");
+        : groups(events, tab === "model" ? "model" : tab === "key" ? "client" : "key");
     result = result.filter((r) =>
-      (r.name || r.model + " " + r.key)
+      (r.name ? keyLabel(r.name) : `${r.model} ${keyLabel(r.client)} ${keyLabel(r.key)}`)
         .toLowerCase()
         .includes(query.toLowerCase()),
     );
@@ -304,7 +320,7 @@ function App() {
             : b.input + b.output - (a.input + a.output),
       );
     return result;
-  }, [events, tab, query, sort]);
+  }, [events, tab, query, sort, keyLabel]);
   const maxPage = Math.max(0, Math.ceil(rows.length / 8) - 1),
     shown = rows.slice(
       Math.min(page, maxPage) * 8,
@@ -331,6 +347,7 @@ function App() {
           ? 30
           : 0;
   return (
+    <I18nContext.Provider value={i18n}>
     <TooltipProvider>
       <div className="min-h-dvh">
         <header className="border-b bg-card">
@@ -361,12 +378,27 @@ function App() {
                 ) : (
                   <WifiOff className="size-3" />
                 )}
-                {healthy ? "采集正常" : "等待连接"}
+                {healthy ? t("collecting") : t("waiting")}
               </Badge>
+              <Select value={lang} onValueChange={(value) => { setLang(value); saveLanguage(value); }}>
+                <SelectTrigger size="sm" className="gap-1.5" aria-label={t("language")}>
+                  <Languages className="size-3.5" />
+                  <span className="hidden sm:inline">
+                    <SelectValue />
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(LANGUAGES).map(([value, { label }]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={dark ? "切换浅色" : "切换深色"}
+                aria-label={dark ? t("lightTheme") : t("darkTheme")}
                 onClick={() => setDark(!dark)}
               >
                 {dark ? <Sun /> : <Moon />}
@@ -378,13 +410,13 @@ function App() {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">
-                工作台 / 用量分析
+                {t("breadcrumb")}
               </p>
               <h1 className="text-3xl font-semibold tracking-tight">
-                本地优先，轻量运行。
+                {t("heroTitle")}
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                数据留在本机，一个轻量服务看清请求、Token 与模型用量。
+                {t("heroSubtitle")}
               </p>
             </div>
             <Button
@@ -393,18 +425,18 @@ function App() {
               disabled={busy}
             >
               <RefreshCw className={busy ? "animate-spin" : ""} />
-              {busy ? "刷新中" : "刷新"}
+              {busy ? t("refreshing") : t("refresh")}
             </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <SegmentedControl
-              ariaLabel="时间范围"
+              ariaLabel={t("range")}
               value={activeQuick}
               onChange={quick}
               items={[
-                { label: "今天", value: 1 },
-                { label: "近 7 天", value: 7 },
-                { label: "近 30 天", value: 30 },
+                { label: t("today"), value: 1 },
+                { label: t("last7"), value: 7 },
+                { label: t("last30"), value: 30 },
               ]}
             />
             <Popover
@@ -417,14 +449,14 @@ function App() {
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm">
                   <CalendarDays />
-                  {format(range.from, "yyyy/MM/dd")} –{" "}
-                  {format(range.to, "MM/dd")}
+                  {format(range.from, formats.rangeFrom)} –{" "}
+                  {format(range.to, formats.rangeTo)}
                 </Button>
               </PopoverTrigger>
               <PopoverContent align="start" className="w-auto p-0">
                 <Calendar
                   mode="range"
-                  locale={zhCN}
+                  locale={i18n.dateLocale}
                   selected={draft}
                   onSelect={(v) => setDraft(v || {})}
                   defaultMonth={range.from}
@@ -434,7 +466,7 @@ function App() {
                 <Separator />
                 <div className="flex items-center justify-between gap-4 p-3">
                   <span className="text-xs text-muted-foreground">
-                    选择开始和结束日期
+                    {t("pickRange")}
                   </span>
                   <Button
                     size="sm"
@@ -444,7 +476,7 @@ function App() {
                       setCalendarOpen(false);
                     }}
                   >
-                    应用
+                    {t("apply")}
                   </Button>
                 </div>
               </PopoverContent>
@@ -453,12 +485,12 @@ function App() {
               <SelectTrigger
                 className="w-44 bg-card"
                 size="sm"
-                aria-label="筛选模型"
+                aria-label={t("filterModel")}
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">全部模型</SelectItem>
+                <SelectItem value="all">{t("allModels")}</SelectItem>
                 {modelNames.map((m) => (
                   <SelectItem key={m} value={m}>
                     {m}
@@ -469,109 +501,106 @@ function App() {
             <CurrencyControl value={currencySettings} onChange={setCurrencySettings} />
             <span className="ml-auto text-xs text-muted-foreground">
               {data?.collected_at
-                ? "更新于 " + format(new Date(data.collected_at), "HH:mm:ss")
-                : "每 60 秒自动刷新"}
+                ? t("updatedAt", { time: format(new Date(data.collected_at), "HH:mm:ss") })
+                : t("autoRefresh")}
             </span>
           </div>
           {error && (
             <Alert variant="destructive">
               <WifiOff />
-              <AlertTitle>暂时无法获取用量</AlertTitle>
+              <AlertTitle>{t("loadFailed")}</AlertTitle>
               <AlertDescription>
-                {error}。
-                {data
-                  ? "下方保留上次结果，请重试。"
-                  : "请确认 CLIProxyAPI 与插件运行正常。"}
+                {t(data ? "loadFailedStale" : "loadFailedEmpty", { error: errorText(error) })}
               </AlertDescription>
             </Alert>
           )}
           {data?.configured && data.collect_err && (
             <Alert variant="destructive">
               <WifiOff />
-              <AlertTitle>采集需要关注</AlertTitle>
+              <AlertTitle>{t("collectAttention")}</AlertTitle>
               <AlertDescription>
-                {data.collect_err}。历史记录仍可查看。
+                {t("collectError", { error: i18n.serverMessage(data.collect_err) })}
               </AlertDescription>
             </Alert>
           )}
           <section
-            aria-label="核心指标"
+            aria-label={t("coreMetrics")}
             className="animate-in fade-in slide-in-from-bottom-2 duration-500 grid grid-cols-2 gap-3 lg:grid-cols-5"
           >
             <Metric
               className="col-span-2 lg:col-span-1"
-              label={stats.priced && stats.unpriced ? "预估费用 · 部分费用" : "预估费用"}
-              value={!stats.n ? "暂无" : stats.priced ? displayMoney(stats.cost) : "未定价"}
+              label={stats.priced && stats.unpriced ? t("estimatedCostPartial") : t("estimatedCost")}
+              value={!stats.n ? t("noData") : stats.priced ? displayMoney(stats.cost) : t("unpriced")}
               raw={stats.priced ? stats.cost : undefined}
               format={(n) => money(n, currency, fxRate, convertUSD(n, currency, fxRate) >= 100 ? 2 : 6)}
-              detail={!stats.n ? `跟随日期与模型筛选 · ${currency}` : `${currency} · ${fmt(stats.priced)} / ${fmt(stats.n)} 请求已计价${stats.unpriced ? ` · ${fmt(stats.unpriced)} 未定价` : ""}${stats.historical ? ` · ${fmt(stats.historical)} 历史估算` : ""}`}
-              help={`按请求对应的价格版本估算，普通输入、缓存读取、缓存写入、输出分别计价；推理不重复累加。历史缺价采用首个可用价格。${currency === "CNY" ? `按 1 USD = ${fxRate} CNY 换算。` : ""}预估费用不代表实际账单。`}
+              detail={!stats.n ? t("costDetailEmpty", { currency }) : t("costDetail", { currency, priced: stats.priced, total: stats.n, count: stats.n }) + (stats.unpriced ? t("costDetailUnpriced", { count: stats.unpriced }) : "") + (stats.historical ? t("costDetailHistorical", { count: stats.historical }) : "")}
+              help={t("costHelp") + (currency === "USD" ? "" : t("costHelpRate", { rate: i18n.number(fxRate, { maximumFractionDigits: 8 }), currency })) + t("costHelpDisclaimer")}
               loading={loading}
             />
             <Metric
-              label="总 Token"
+              label={t("totalTokens")}
               value={compact(total)}
               raw={total}
               format={compact}
-              detail={`输入 ${compact(stats.input)} / 输出 ${compact(stats.output)}`}
-              help={`精确值 ${fmt(total)}。输入包含缓存，输出包含推理，不重复累加。`}
+              detail={t("tokensDetail", { input: compact(stats.input), output: compact(stats.output) })}
+              help={t("tokensHelp", { total })}
               loading={loading}
             />
             <Metric
-              label="请求次数"
+              label={t("requests")}
               value={fmt(stats.n)}
               raw={stats.n}
               format={(v) => fmt(Math.round(v))}
-              detail={`${fmt(groups(events, "model").length)} 个模型参与调用`}
-              help="包含成功、失败和零 Token 请求。"
+              detail={t("modelsCalled", { count: groups(events, "model").length })}
+              help={t("requestsHelp")}
               loading={loading}
             />
             <Metric
-              label="请求成功率"
-              value={rate === null ? "暂无" : rate + "%"}
+              label={t("successRate")}
+              value={rate === null ? t("noData") : percent(rate)}
               raw={rate ?? undefined}
-              format={(v) => v.toFixed(1) + "%"}
-              detail={`${fmt(stats.fail)} 次失败 / ${fmt(stats.n - stats.fail)} 次成功`}
-              help="按 CPA 返回的 failed 标记统计，不推断错误原因。"
+              format={percent}
+              detail={t("successDetail", { failed: stats.fail, succeeded: stats.n - stats.fail })}
+              help={t("successHelp")}
               loading={loading}
             />
             <Metric
-              label="缓存命中率"
+              label={t("cacheRate")}
               value={
                 stats.input
-                  ? ((stats.cache / stats.input) * 100).toFixed(1) + "%"
-                  : "暂无"
+                  ? percent((stats.cache / stats.input) * 100)
+                  : t("noData")
               }
               raw={stats.input ? (stats.cache / stats.input) * 100 : undefined}
-              format={(v) => v.toFixed(1) + "%"}
-              detail={`复用 ${compact(stats.cache)} 输入 Token`}
-              help="缓存读取 Token / 输入 Token。缓存是输入的一部分。"
+              format={percent}
+              detail={t("cacheDetail", { cache: compact(stats.cache) })}
+              help={t("cacheHelp")}
               loading={loading}
             />
           </section>
           <Card className="animate-in fade-in slide-in-from-bottom-2 duration-500 [animation-delay:80ms] shadow-none">
             <CardHeader className="flex flex-wrap flex-row items-start justify-between gap-4">
               <div>
-                <CardTitle className="text-base">{chartMetric === "cost" ? "费用趋势" : "Token 趋势"}</CardTitle>
+                <CardTitle className="text-base">{chartMetric === "cost" ? t("costTrend") : t("tokenTrend")}</CardTitle>
                 <CardDescription className="mt-1.5">
-                  {chartMetric === "cost" ? `预估费用（${currency}）${stats.unpriced ? ` · ${fmt(stats.unpriced)} 次请求未定价，金额仅包含已计价部分` : ""}${stats.historical ? ` · ${fmt(stats.historical)} 次历史估算` : ""}` : "缓存输入、净输入和输出的堆叠分布"}
+                  {chartMetric === "cost" ? t("costTrendDetail", { currency }) + (stats.unpriced ? t("costTrendUnpriced", { count: stats.unpriced }) : "") + (stats.historical ? t("costTrendHistorical", { count: stats.historical }) : "") : t("tokenTrendDetail")}
                 </CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
               <SegmentedControl
-                ariaLabel="趋势指标"
+                ariaLabel={t("trendMetric")}
                 value={chartMetric}
                 onChange={setChartMetric}
-                items={[{ label: "Token", value: "tokens" }, { label: "费用", value: "cost" }]}
+                items={[{ label: t("tokens"), value: "tokens" }, { label: t("cost"), value: "cost" }]}
               />
               <SegmentedControl
-                ariaLabel="聚合粒度"
+                ariaLabel={t("bucketing")}
                 value={bucket}
                 onChange={setBucket}
                 items={[
-                  { label: "小时", value: "hour" },
-                  { label: "天", value: "day" },
-                  { label: "月", value: "month" },
+                  { label: t("hour"), value: "hour" },
+                  { label: t("day"), value: "day" },
+                  { label: t("month"), value: "month" },
                 ]}
               />
               </div>
@@ -597,23 +626,17 @@ function App() {
                         tickLine={false}
                         minTickGap={35}
                         tickMargin={12}
-                        tickFormatter={(v) =>
-                          bucket === "hour"
-                            ? v.slice(5)
-                            : bucket === "day"
-                              ? v.slice(5)
-                              : v
-                        }
+                        tickFormatter={(v) => bucketTick(v, bucket)}
                       />
                       <YAxis
-                        tickFormatter={chartMetric === "cost" ? (n) => `${currency === "CNY" ? "¥" : "$"}${compact(n)}` : compact}
+                        tickFormatter={chartMetric === "cost" ? (n) => withSymbol(currency, compact(n)) : compact}
                         axisLine={false}
                         tickLine={false}
                         width={chartMetric === "cost" ? 64 : 48}
                       />
                       <ChartTooltip
                         content={chartMetric === "cost" ? <ChartTooltipContent formatter={(value, name, item) => (
-                          <div className="space-y-1"><p className="font-medium tabular-nums">预估费用 {money(value, currency, 1)}</p>{item.payload.unpriced > 0 && <p className="text-muted-foreground">部分费用 · {fmt(item.payload.unpriced)} 次请求未定价</p>}</div>
+                          <div className="space-y-1"><p className="font-medium tabular-nums">{t("tooltipCost", { amount: money(value, currency, 1) })}</p>{item.payload.unpriced > 0 && <p className="text-muted-foreground">{t("tooltipPartial", { count: item.payload.unpriced })}</p>}</div>
                         )} /> : <ChartTooltipContent valueFormatter={fmt} />}
                       />
                       {(chartMetric === "cost" ? ["cost"] : ["cache", "net", "output"]).map((k) => (
@@ -647,9 +670,9 @@ function App() {
               ) : (
                 <div className="flex h-72 flex-col items-center justify-center gap-3 text-muted-foreground">
                   <Activity className="size-8 opacity-40" />
-                  <p className="text-sm">{stats.n && chartMetric === "cost" ? "当前请求未定价，请在价格表中设置单价。" : "这个时间范围内，还没有用量。"}</p>
+                  <p className="text-sm">{stats.n && chartMetric === "cost" ? t("chartUnpriced") : t("chartEmpty")}</p>
                   <Button variant="outline" size="sm" onClick={() => quick(30)}>
-                    查看近 30 天
+                    {t("viewLast30")}
                   </Button>
                 </div>
               )}
@@ -659,17 +682,17 @@ function App() {
             <CardHeader className="pb-5">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
-                  <CardTitle className="text-base">用量明细</CardTitle>
+                  <CardTitle className="text-base">{t("details")}</CardTitle>
                   <CardDescription className="mt-1.5">
-                    从模型到每次请求，逐层查看
+                    {t("detailsSubtitle")}
                   </CardDescription>
                 </div>
                 <div className="relative w-full sm:w-60">
                   <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
                   <Input
                     className="pl-9"
-                    placeholder="搜索模型或 Key"
-                    aria-label="搜索明细"
+                    placeholder={t("searchPlaceholder")}
+                    aria-label={t("searchDetails")}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                   />
@@ -679,7 +702,7 @@ function App() {
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 px-6 pb-4">
                 <SegmentedControl
-                  ariaLabel="明细视图"
+                  ariaLabel={t("detailsView")}
                   value={tab}
                   onChange={(value) => { setTab(value); setSort(value === "requests" ? "time" : "tokens"); }}
                   items={[
@@ -687,7 +710,7 @@ function App() {
                       label: (
                         <>
                           <Layers className="size-3.5" />
-                          按模型
+                          {t("byModel")}
                         </>
                       ),
                       value: "model",
@@ -696,7 +719,7 @@ function App() {
                       label: (
                         <>
                           <KeyRound className="size-3.5" />
-                          按 Key
+                          {t("byKey")}
                         </>
                       ),
                       value: "key",
@@ -704,8 +727,17 @@ function App() {
                     {
                       label: (
                         <>
+                          <UserRound className="size-3.5" />
+                          {t("byAccount")}
+                        </>
+                      ),
+                      value: "account",
+                    },
+                    {
+                      label: (
+                        <>
                           <Activity className="size-3.5" />
-                          请求
+                          {t("requestsTab")}
                         </>
                       ),
                       value: "requests",
@@ -714,19 +746,19 @@ function App() {
                 />
                   <Select value={tab === "requests" && sort !== "cost" ? "time" : sort} onValueChange={setSort}>
                     <SelectTrigger
-                      className="w-36"
+                      className="min-w-36"
                       size="sm"
-                      aria-label="明细排序"
+                      aria-label={t("sortDetails")}
                     >
                       <ArrowDownUp className="size-3" />
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="cost">费用降序</SelectItem>
-                      {tab === "requests" ? <SelectItem value="time">时间倒序</SelectItem> : <>
-                        <SelectItem value="tokens">Token 降序</SelectItem>
-                        <SelectItem value="requests">请求数降序</SelectItem>
-                        <SelectItem value="name">名称排序</SelectItem>
+                      <SelectItem value="cost">{t("sortCost")}</SelectItem>
+                      {tab === "requests" ? <SelectItem value="time">{t("sortTime")}</SelectItem> : <>
+                        <SelectItem value="tokens">{t("sortTokens")}</SelectItem>
+                        <SelectItem value="requests">{t("sortRequests")}</SelectItem>
+                        <SelectItem value="name">{t("sortName")}</SelectItem>
                       </>}
                     </SelectContent>
                   </Select>
@@ -736,18 +768,18 @@ function App() {
                 <TableHeader>
                   <TableRow>
                     {(tab === "requests"
-                      ? ["时间 / 模型", "Key", "状态", "输入", "缓存", "输出", "预估费用"]
+                      ? ["colTimeModel", "colKey", "colStatus", "colInput", "colCache", "colOutput", "colCost"]
                       : [
-                          "模型 / Key",
-                          "请求",
-                          "成功率",
-                          "输入",
-                          "缓存",
-                          "输出",
-                          "总 Token",
-                          "预估费用",
+                          "colModelKey",
+                          "colRequests",
+                          "colSuccessRate",
+                          "colInput",
+                          "colCache",
+                          "colOutput",
+                          "colTotalTokens",
+                          "colCost",
                         ]
-                    ).map((s, i) => (
+                    ).map((key) => t(key)).map((s, i) => (
                       <TableHead key={s} className={i ? "text-right" : "pl-6"}>
                         {s}
                       </TableHead>
@@ -765,7 +797,7 @@ function App() {
                         <>
                           <TableCell className="pl-6">
                             <div className="text-xs text-muted-foreground">
-                              {format(new Date(r.ts * 1000), "MM-dd HH:mm:ss")}
+                              {format(new Date(r.ts * 1000), formats.requestTime)}
                             </div>
                             <div
                               className="max-w-56 truncate font-medium"
@@ -774,14 +806,17 @@ function App() {
                               {r.model}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
-                            {r.key}
+                          <TableCell
+                            className="text-right font-mono text-xs"
+                            title={t("accountTitle", { account: keyLabel(r.key) })}
+                          >
+                            {keyLabel(r.client)}
                           </TableCell>
                           <TableCell className="text-right">
                             <Badge
                               variant={r.failed ? "destructive" : "secondary"}
                             >
-                              {r.failed ? "失败" : "成功"}
+                              {r.failed ? t("failed") : t("succeeded")}
                             </Badge>
                           </TableCell>
                         </>
@@ -789,15 +824,15 @@ function App() {
                         <>
                           <TableCell
                             className="max-w-64 truncate pl-6 font-medium"
-                            title={r.name}
+                            title={keyLabel(r.name)}
                           >
-                            {r.name}
+                            {keyLabel(r.name)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {fmt(r.n)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {(((r.n - r.fail) / r.n) * 100).toFixed(1)}%
+                            {percent(((r.n - r.fail) / r.n) * 100)}
                           </TableCell>
                         </>
                       )}
@@ -818,10 +853,10 @@ function App() {
                           {compact(r.input + r.output)}
                         </TableCell>
                       )}
-                      <TableCell className="pr-6 text-right tabular-nums whitespace-nowrap" title={r.price_version ? `价格版本 ${r.price_version}` : undefined}>
-                        <div className="font-medium">{tab === "requests" ? displayMoney(r.cost) : r.priced ? displayMoney(r.cost) : "未定价"}</div>
-                        {r.priced > 0 && r.unpriced > 0 && <p className="mt-1 text-[10px] text-muted-foreground">部分费用 · {fmt(r.unpriced)} 未定价</p>}
-                        {(r.historical > 0 || r.price_basis === "historical_estimate") && <p className="mt-1 text-[10px] text-muted-foreground">历史估算</p>}
+                      <TableCell className="pr-6 text-right tabular-nums whitespace-nowrap" title={r.price_version ? t("priceVersion", { version: String(r.price_version) }) : undefined}>
+                        <div className="font-medium">{tab === "requests" ? displayMoney(r.cost) : r.priced ? displayMoney(r.cost) : t("unpriced")}</div>
+                        {r.priced > 0 && r.unpriced > 0 && <p className="mt-1 text-[10px] text-muted-foreground">{t("partialUnpriced", { count: r.unpriced })}</p>}
+                        {(r.historical > 0 || r.price_basis === "historical_estimate") && <p className="mt-1 text-[10px] text-muted-foreground">{t("historicalEstimate")}</p>}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -832,10 +867,10 @@ function App() {
                         className="h-32 text-center text-muted-foreground"
                       >
                         {loading
-                          ? "正在加载明细…"
+                          ? t("loadingDetails")
                           : query
-                            ? "没有匹配结果，换个关键词试试。"
-                            : "暂无明细"}
+                            ? t("noMatches")
+                            : t("noDetails")}
                       </TableCell>
                     </TableRow>
                   )}
@@ -844,13 +879,13 @@ function App() {
             </div>
             <Separator />
             <div className="flex items-center justify-between px-6 py-3 text-xs text-muted-foreground">
-              <span>{fmt(rows.length)} 条记录 · Key 已匿名化</span>
+              <span>{t("recordsCount", { count: rows.length })}</span>
               <div className="flex items-center gap-2">
                 <Button
                   variant="ghost"
                   size="icon"
                   className="size-7"
-                  aria-label="上一页"
+                  aria-label={t("previousPage")}
                   disabled={page === 0}
                   onClick={() => setPage((p) => p - 1)}
                 >
@@ -863,7 +898,7 @@ function App() {
                   variant="ghost"
                   size="icon"
                   className="size-7"
-                  aria-label="下一页"
+                  aria-label={t("nextPage")}
                   disabled={page >= maxPage}
                   onClick={() => setPage((p) => p + 1)}
                 >
@@ -875,17 +910,17 @@ function App() {
           <footer className="flex flex-wrap items-center justify-between gap-2 pb-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <Database className="size-3" />
-              本地 SQLite · {data?.timezone || "本机时区"} · v
-              {data?.version || "0.1.1"}
+              {t("footerStorage", { timezone: data?.timezone || t("localTimezone"), version: data?.version || "0.1.1" })}
             </span>
             <span>
-              输入包含缓存，输出包含推理
-              {data?.skipped ? ` · ${data.skipped} 条无效记录未统计` : ""}
+              {t("footerNote")}
+              {data?.skipped ? t("footerSkipped", { count: data.skipped }) : ""}
             </span>
           </footer>
         </main>
       </div>
     </TooltipProvider>
+    </I18nContext.Provider>
   );
 }
 createRoot(document.getElementById("root")).render(<App />);
