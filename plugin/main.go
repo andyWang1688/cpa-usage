@@ -173,7 +173,7 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 			{"Method":"POST","Path":"/plugins/usage-report/api/pricing/refresh","Menu":"","Description":"refresh public prices"}
 		],"resources":[
 			{"Path":"/report","Menu":"Usage Report","Description":"CPA usage dashboard"},
-			{"Path":"/assets/index-C8aDvwJS.js","Menu":"","Description":"dashboard js"},
+			{"Path":"/assets/index-DF0Jn0AW.js","Menu":"","Description":"dashboard js"},
 			{"Path":"/assets/index-DjhBQnVp.css","Menu":"","Description":"dashboard css"}
 		]}`)
 	case "usage.handle":
@@ -344,10 +344,20 @@ func handleUsage(req []byte) {
 		return
 	}
 	digest := sha1.Sum(payload)
-	// Keep the existing dedup identity when adding optional protocol metadata.
+	// Keep the existing dedup identity when adding optional metadata.
+	extra := false
 	if u.Provider != "" || u.ExecutorType != "" {
 		event["provider"] = u.Provider
 		event["executor_type"] = u.ExecutorType
+		extra = true
+	}
+	if u.APIKey != "" {
+		// Store only a hash and the masked form, never the client key itself.
+		event["client_id"] = anonKey(u.APIKey)
+		event["client"] = maskKey(u.APIKey)
+		extra = true
+	}
+	if extra {
 		payload, err = json.Marshal(event)
 		if err != nil {
 			return
@@ -417,8 +427,8 @@ func handleManagement(req []byte) ([]byte, error) {
 		}
 		return managementResponse(200, "text/html; charset=utf-8", html)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-C8aDvwJS.js") {
-		js, err := webFS.ReadFile("web/assets/index-C8aDvwJS.js")
+	if strings.HasSuffix(m.Path, "/assets/index-DF0Jn0AW.js") {
+		js, err := webFS.ReadFile("web/assets/index-DF0Jn0AW.js")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}
@@ -498,6 +508,8 @@ type dbEvent struct {
 	Alias        string         `json:"alias"`
 	Source       string         `json:"source"`
 	APIKey       string         `json:"api_key"`
+	ClientID     string         `json:"client_id"`
+	Client       string         `json:"client"`
 	Failed       bool           `json:"failed"`
 	LatencyMs    float64        `json:"latency_ms"`
 	TTFTMs       float64        `json:"ttft_ms"`
@@ -510,6 +522,7 @@ type outEvent struct {
 	Model         string  `json:"model"`
 	Provider      string  `json:"provider"`
 	Key           string  `json:"key"`
+	Client        string  `json:"client"`
 	Input         int64   `json:"input"`
 	Output        int64   `json:"output"`
 	Cache         int64   `json:"cache"`
@@ -536,6 +549,14 @@ func anonKey(source string) string {
 	}
 	sum := sha256.Sum256([]byte(source))
 	return "key-" + hex.EncodeToString(sum[:])[:10]
+}
+
+// maskKey shows a client key the way the CPA management panel does (sk******95).
+func maskKey(key string) string {
+	if len(key) <= 6 {
+		return "******"
+	}
+	return key[:2] + "******" + key[len(key)-2:]
 }
 
 func usageResponse(q map[string][]string) ([]byte, error) {
@@ -582,6 +603,7 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 	hi := float64(b.AddDate(0, 0, 1).Unix())
 
 	events := []outEvent{}
+	clientIDs := []string{}
 	bins := map[string]*outBucket{}
 	order := []string{}
 	skipped := 0
@@ -653,8 +675,12 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 					input += cache + creation
 				}
 			}
+			clientID, client := e.ClientID, e.Client
+			if clientID == "" && e.APIKey != "" {
+				clientID, client = anonKey(e.APIKey), maskKey(e.APIKey)
+			}
 			event := outEvent{
-				Ts: ts, Model: model, Key: anonKey(source),
+				Ts: ts, Model: model, Key: anonKey(source), Client: client,
 				Input: input, Output: output, Cache: cache, Reasoning: reasoning,
 				Provider: e.Provider, CacheCreation: creation,
 				Failed: e.Failed, LatencyMs: e.LatencyMs, TTFTMs: e.TTFTMs,
@@ -664,6 +690,7 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 				return nil, err
 			}
 			events = append(events, event)
+			clientIDs = append(clientIDs, clientID)
 			t := time.Unix(int64(ts), 0)
 			var label string
 			switch bucket {
@@ -693,6 +720,21 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 			} else {
 				bk.Unpriced++
 			}
+		}
+	}
+	// Different keys can share a masked form; tell them apart by their hash.
+	owners := map[string]map[string]bool{}
+	for i, id := range clientIDs {
+		if id != "" {
+			if owners[events[i].Client] == nil {
+				owners[events[i].Client] = map[string]bool{}
+			}
+			owners[events[i].Client][id] = true
+		}
+	}
+	for i, id := range clientIDs {
+		if len(owners[events[i].Client]) > 1 {
+			events[i].Client += " · " + strings.TrimPrefix(id, "key-")[:4]
 		}
 	}
 	sort.Strings(order)

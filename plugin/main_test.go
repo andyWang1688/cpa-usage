@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -63,7 +64,7 @@ func TestManagementReport(t *testing.T) {
 	}
 	t.Logf("page ok: %d bytes, %s", len(body), ct)
 
-	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-C8aDvwJS.js", "GET")
+	status, ct, js := callMgmt(t, "/v0/resource/plugins/usage-report/assets/index-DF0Jn0AW.js", "GET")
 	if status != 200 || len(js) < 100000 {
 		t.Fatalf("js: %d %s %d bytes", status, ct, len(js))
 	}
@@ -140,6 +141,38 @@ func TestApplyConfig(t *testing.T) {
 	applyConfig(host)
 	if lastOpened != tmp+"/host.sqlite" {
 		t.Fatalf("host shape: got %q", lastOpened)
+	}
+}
+
+func TestUsageGroupsByClientKey(t *testing.T) {
+	openDB(filepath.Join(t.TempDir(), "clients.sqlite"))
+	record := func(apiKey, source string, minute int) {
+		handleUsage([]byte(fmt.Sprintf(`{"result":{"Provider":"claude","Model":"m","APIKey":%q,"Source":%q,"RequestedAt":"2026-09-10T11:%02d:00+08:00","Detail":{"InputTokens":10,"OutputTokens":5,"TotalTokens":15}}}`, apiKey, source, minute)))
+	}
+	record("sk-first-key-95", "acct@example.com", 1)
+	record("sk-other-key-95", "acct@example.com", 2)
+	record("sk-third-key-V7", "other@example.com", 3)
+	record("", "acct@example.com", 4)
+	status, _, body := callMgmt(t, "/v0/management/plugins/usage-report/api/usage", "GET")
+	if status != 200 {
+		t.Fatalf("HTTP %d: %s", status, body)
+	}
+	if strings.Contains(string(body), "first-key") || strings.Contains(string(body), "third-key") {
+		t.Fatal("API exposed client key")
+	}
+	var response struct{ Events []outEvent }
+	if err := json.Unmarshal(body, &response); err != nil || len(response.Events) != 4 {
+		t.Fatalf("bad response: %s %v", body, err)
+	}
+	ev := response.Events
+	if ev[0].Client == ev[1].Client || !strings.HasPrefix(ev[0].Client, "sk******95 · ") || !strings.HasPrefix(ev[1].Client, "sk******95 · ") {
+		t.Fatalf("keys sharing a mask must stay apart: %q %q", ev[0].Client, ev[1].Client)
+	}
+	if ev[2].Client != "sk******V7" || ev[3].Client != "" {
+		t.Fatalf("clients: %q %q", ev[2].Client, ev[3].Client)
+	}
+	if ev[0].Key != anonKey("acct@example.com") || ev[2].Key != anonKey("other@example.com") {
+		t.Fatalf("account grouping changed: %q %q", ev[0].Key, ev[2].Key)
 	}
 }
 

@@ -5,6 +5,7 @@
 - Fix `db_path` never being applied. CLIProxyAPI sends `config_yaml` as a `[]byte` field, so it arrives base64-encoded; the plugin read it as plain text and always fell back to `~/.cli-proxy-api/usage-report.sqlite`. Both shapes are now accepted, and missing parent directories are created. If your config already sets `db_path`, the plugin now uses that file: move `~/.cli-proxy-api/usage-report.sqlite` there to keep your history, or remove `db_path`.
 - Add a Portuguese (Brazil) dashboard. The language follows the browser (`pt*` → Portuguese, otherwise Chinese), can be switched from the header and is saved in the browser. Dates, numbers and known server messages are localized; Chinese stays the default.
 - Add BRL as a display currency next to USD and CNY, each with its own editable exchange rate (defaults 7.20 CNY and 5.50 BRL). The CNY rate saved by 0.4.0 is kept.
+- Group the Key view by client API key, shown masked like the CPA management panel (`sk******95`); only a hash and the masked form are stored. CPA reports the upstream credential (OAuth account, Vertex project or provider key) in `Source`, which is what the Key view showed until now; that view moved to a new Account tab. Requests recorded before this change have no client key and show as unknown.
 
 ## 0.4.0
 

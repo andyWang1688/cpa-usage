@@ -16,6 +16,7 @@ import {
   RefreshCw,
   Search,
   Sun,
+  UserRound,
   WifiOff,
 } from "lucide-react";
 import { format, subDays } from "date-fns";
@@ -70,7 +71,7 @@ import {
 } from "@/components/ui/chart";
 import { convertUSD, dateKey, groups, summarize, trend } from "./analytics";
 import { fxRateFor, readCurrencySettings, saveCurrencySettings } from "./currency";
-import { createI18n, detectLanguage, LANGUAGES, saveLanguage } from "./i18n";
+import { createI18n, detectLanguage, LANGUAGES, saveLanguage, UNKNOWN_KEY } from "./i18n";
 import { I18nContext, useI18n } from "./i18n-context";
 import "./index.css";
 
@@ -275,7 +276,10 @@ function App() {
   }, [range, bucket]);
   const events = useMemo(
     () =>
-      (data?.events || []).filter((e) => model === "all" || e.model === model),
+      (data?.events || [])
+        .filter((e) => model === "all" || e.model === model)
+        // Requests recorded before client keys were stored have none.
+        .map((e) => (e.client ? e : { ...e, client: UNKNOWN_KEY })),
     [data, model],
   );
   const stats = useMemo(() => summarize(events), [events]),
@@ -295,9 +299,9 @@ function App() {
     let result =
       tab === "requests"
         ? [...events].reverse()
-        : groups(events, tab === "model" ? "model" : "key");
+        : groups(events, tab === "model" ? "model" : tab === "key" ? "client" : "key");
     result = result.filter((r) =>
-      (r.name ? keyLabel(r.name) : r.model + " " + keyLabel(r.key))
+      (r.name ? keyLabel(r.name) : `${r.model} ${keyLabel(r.client)} ${keyLabel(r.key)}`)
         .toLowerCase()
         .includes(query.toLowerCase()),
     );
@@ -723,6 +727,15 @@ function App() {
                     {
                       label: (
                         <>
+                          <UserRound className="size-3.5" />
+                          {t("byAccount")}
+                        </>
+                      ),
+                      value: "account",
+                    },
+                    {
+                      label: (
+                        <>
                           <Activity className="size-3.5" />
                           {t("requestsTab")}
                         </>
@@ -793,8 +806,11 @@ function App() {
                               {r.model}
                             </div>
                           </TableCell>
-                          <TableCell className="text-right font-mono text-xs">
-                            {keyLabel(r.key)}
+                          <TableCell
+                            className="text-right font-mono text-xs"
+                            title={t("accountTitle", { account: keyLabel(r.key) })}
+                          >
+                            {keyLabel(r.client)}
                           </TableCell>
                           <TableCell className="text-right">
                             <Badge

@@ -94,7 +94,7 @@ go build -buildmode=c-shared -o usage-report.dylib .   # macOS；Linux 产物为
 
 ## 数据与安全
 
-- 用量事件保存在 `db_path` 指向的本地 SQLite（表 `usage_events`），页面 API 在返回前将 Key 转换为稳定的匿名分组（`key-xxxxxxxxxx` 或 `未知 Key`）。
+- 用量事件保存在 `db_path` 指向的本地 SQLite（表 `usage_events`）。“按 Key” 按客户端 API Key 分组，只保存其哈希与掩码（如 `sk******95`，与 CPA 管理面板一致）；“按账号” 按 CPA 实际使用的上游凭据分组，页面 API 在返回前将其转换为稳定的匿名分组（`key-xxxxxxxxxx` 或 `未知 Key`）。
 - 原始事件仅保存在本地，可能包含客户端 Key；不要将数据库公开上传。
 - 插件的资源页面无独立鉴权，仅在 CPA 管理域内可达；请勿将 CPA 管理端口暴露到公网。
 
