@@ -70,6 +70,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	_ "modernc.org/sqlite"
@@ -189,10 +190,10 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 
 func applyConfig(req []byte) {
 	var parsed struct {
-		ConfigYaml string `json:"config_yaml"`
+		ConfigYaml json.RawMessage `json:"config_yaml"`
 	}
 	_ = json.Unmarshal(req, &parsed)
-	if parsed.ConfigYaml == "" {
+	if len(parsed.ConfigYaml) == 0 {
 		// Some host versions wrap the payload in a {"result": {...}} envelope.
 		var wrapped struct {
 			Result json.RawMessage `json:"result"`
@@ -201,11 +202,12 @@ func applyConfig(req []byte) {
 			_ = json.Unmarshal(wrapped.Result, &parsed)
 		}
 	}
-	if parsed.ConfigYaml == "" {
+	configYaml := decodeConfigYAML(parsed.ConfigYaml)
+	if configYaml == "" {
 		return
 	}
 	path := ""
-	for _, line := range strings.Split(parsed.ConfigYaml, "\n") {
+	for _, line := range strings.Split(configYaml, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "db_path:") {
 			path = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "db_path:")), `"'`)
@@ -221,6 +223,19 @@ func applyConfig(req []byte) {
 		}
 	}
 	openDB(path)
+}
+
+// decodeConfigYAML reads config_yaml from a lifecycle request. CLIProxyAPI
+// declares it as []byte, so encoding/json delivers it base64-encoded; a plain
+// YAML string is still accepted.
+func decodeConfigYAML(raw json.RawMessage) string {
+	var b []byte
+	if err := json.Unmarshal(raw, &b); err == nil && utf8.Valid(b) {
+		return string(b)
+	}
+	var s string
+	_ = json.Unmarshal(raw, &s)
+	return s
 }
 
 func defaultDBPath() string {
@@ -239,6 +254,11 @@ func openDB(path string) {
 	}
 	if db != nil {
 		_ = db.Close()
+	}
+	// SQLite does not create missing parent directories.
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		lastErr = "sqlite open: " + err.Error()
+		return
 	}
 	conn, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)")
 	if err != nil {

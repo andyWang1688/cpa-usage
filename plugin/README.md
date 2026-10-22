@@ -18,7 +18,7 @@ plugins:
   configs:
     usage-report:
       enabled: true
-      db_path: "~/.cli-proxy-api/usage-report/usage.sqlite"
+      db_path: "~/.cli-proxy-api/usage-report.sqlite"
 ```
 
 Then install from the management panel: **Plugin Store → CPA Usage Report → Install**.
