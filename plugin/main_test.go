@@ -129,6 +129,26 @@ func TestApplyConfig(t *testing.T) {
 	if lastOpened != tmp+"/wrapped.sqlite" {
 		t.Fatalf("wrapped shape: got %q", lastOpened)
 	}
+	// CLIProxyAPI marshals config_yaml from a []byte field, i.e. base64.
+	host, err := json.Marshal(struct {
+		ConfigYAML    []byte `json:"config_yaml"`
+		SchemaVersion uint32 `json:"schema_version"`
+	}{ConfigYAML: []byte("enabled: true\ndb_path: \"" + tmp + "/host.sqlite\"\n"), SchemaVersion: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyConfig(host)
+	if lastOpened != tmp+"/host.sqlite" {
+		t.Fatalf("host shape: got %q", lastOpened)
+	}
+}
+
+func TestOpenDBCreatesParentDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "usage.sqlite")
+	openDB(path)
+	if lastOpened != path || lastErr != "" {
+		t.Fatalf("got %q, err %q", lastOpened, lastErr)
+	}
 }
 
 func TestManagementRegisterRoutes(t *testing.T) {

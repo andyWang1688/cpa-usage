@@ -23,7 +23,7 @@ plugins:
   configs:
     usage-report:
       enabled: true
-      db_path: "~/.cli-proxy-api/usage-report/usage.sqlite"
+      db_path: "~/.cli-proxy-api/usage-report.sqlite"
 ```
 
 2. 重启 CLIProxyAPI，打开管理面板 → **插件商店** → 找到 **CPA Usage Report** → 安装。
@@ -88,7 +88,7 @@ go build -buildmode=c-shared -o usage-report.dylib .   # macOS；Linux 产物为
 | 字段 | 说明 |
 |---|---|
 | `plugins.configs.usage-report.enabled` | 是否启用插件 |
-| `plugins.configs.usage-report.db_path` | SQLite 路径，默认 `~/.cli-proxy-api/usage-report/usage.sqlite` |
+| `plugins.configs.usage-report.db_path` | SQLite 路径，默认 `~/.cli-proxy-api/usage-report.sqlite`，缺少的目录会自动创建。Docker 部署请指向持久化卷，例如 `/data/usage-report.sqlite` |
 | `plugins.store-sources` | 插件商店 registry 地址（安装/更新用） |
 
 ## 数据与安全

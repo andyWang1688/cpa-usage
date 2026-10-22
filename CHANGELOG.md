@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fix `db_path` never being applied. CLIProxyAPI sends `config_yaml` as a `[]byte` field, so it arrives base64-encoded; the plugin read it as plain text and always fell back to `~/.cli-proxy-api/usage-report.sqlite`. Both shapes are now accepted, and missing parent directories are created. If your config already sets `db_path`, the plugin now uses that file: move `~/.cli-proxy-api/usage-report.sqlite` there to keep your history, or remove `db_path`.
+
 ## 0.4.0
 
 - Add estimated token costs to the dashboard, trends, and model/key/request details (#17). Show pricing coverage and distinguish unpriced requests from zero cost.
