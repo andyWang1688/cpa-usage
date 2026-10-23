@@ -7,8 +7,8 @@ export const compact = (n) =>
 export const DEFAULT_FX_RATE = 7.2;
 export const convertUSD = (n, currency = "USD", fxRate = DEFAULT_FX_RATE) =>
   Number.isFinite(n) && currency === "CNY" ? n * fxRate : n;
-export const money = (n, currency = "USD", fxRate = DEFAULT_FX_RATE, maximumFractionDigits = 6) => {
-  if (!Number.isFinite(n)) return "未定价";
+export const money = (n, currency = "USD", fxRate = DEFAULT_FX_RATE, maximumFractionDigits = 6, unpricedLabel = "未定价") => {
+  if (!Number.isFinite(n)) return unpricedLabel;
   const value = convertUSD(n, currency, fxRate);
   const symbol = currency === "CNY" ? "¥" : "$";
   if (value > 0 && value < 0.000001) return `< ${symbol}0.000001`;
