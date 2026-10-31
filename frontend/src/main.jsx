@@ -169,13 +169,15 @@ function xorBytes(bytes, keyBytes) {
 // following the secure-storage format used across the CPA plugin ecosystem.
 function decodeCPAStorage(raw) {
   if (!raw) return null;
-  const prefix = "enc::v1::";
+  const prefix = /^enc::v([12])::/.exec(raw);
   let text = raw;
-  if (text.startsWith(prefix)) {
-    const binary = atob(text.slice(prefix.length));
+  if (prefix) {
+    const binary = atob(text.slice(prefix[0].length));
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const storageKey = `cli-proxy-api-webui::secure-storage|${location.host}|${navigator.userAgent}`;
+    // CPAMC v2 no longer includes the browser user agent in the storage key.
+    const scope = prefix[1] === "1" ? `${location.host}|${navigator.userAgent}` : location.host;
+    const storageKey = `cli-proxy-api-webui::secure-storage|${scope}`;
     text = new TextDecoder().decode(
       xorBytes(bytes, new TextEncoder().encode(storageKey)),
     );

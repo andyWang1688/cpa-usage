@@ -172,7 +172,7 @@ func handleMethod(method string, req []byte) ([]byte, error) {
 			{"Method":"POST","Path":"/plugins/usage-report/api/pricing/refresh","Menu":"","Description":"refresh public prices"}
 		],"resources":[
 			{"Path":"/report","Menu":"Usage Report","Description":"CPA usage dashboard"},
-			{"Path":"/assets/index-WH-FNvxu.js","Menu":"","Description":"dashboard js"},
+			{"Path":"/assets/index-BVGXV6dN.js","Menu":"","Description":"dashboard js"},
 			{"Path":"/assets/index-DWD1CSj_.css","Menu":"","Description":"dashboard css"}
 		]}`)
 	case "usage.handle":
@@ -397,8 +397,8 @@ func handleManagement(req []byte) ([]byte, error) {
 		}
 		return managementResponse(200, "text/html; charset=utf-8", html)
 	}
-	if strings.HasSuffix(m.Path, "/assets/index-WH-FNvxu.js") {
-		js, err := webFS.ReadFile("web/assets/index-WH-FNvxu.js")
+	if strings.HasSuffix(m.Path, "/assets/index-BVGXV6dN.js") {
+		js, err := webFS.ReadFile("web/assets/index-BVGXV6dN.js")
 		if err != nil {
 			return errorEnvelope("asset_missing", err.Error()), nil
 		}
