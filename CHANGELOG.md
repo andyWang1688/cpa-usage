@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
-- Fix `db_path` never being applied. CLIProxyAPI sends `config_yaml` as a `[]byte` field, so it arrives base64-encoded; the plugin read it as plain text and always fell back to `~/.cli-proxy-api/usage-report.sqlite`. Both shapes are now accepted, and missing parent directories are created. If your config already sets `db_path`, the plugin now uses that file: move `~/.cli-proxy-api/usage-report.sqlite` there to keep your history, or remove `db_path`.
+- Fix estimated costs for legacy Devin usage that reports cache writes separately from input (#23, #25). Affected historical rows are repriced on read.
+- Restore dashboard access with remembered Management Center v2 logins where the saved session includes a management key (#22, #25).
+
+- Fix `db_path` never being applied. CLIProxyAPI sends `config_yaml` as a `[]byte` field, so it arrives base64-encoded; the plugin read it as plain text and always fell back to `~/.cli-proxy-api/usage-report.sqlite`. Both shapes are now accepted, and missing parent directories are created. A failed path change leaves the active database usable (#26). If your config already sets `db_path`, the plugin now uses that file: move `~/.cli-proxy-api/usage-report.sqlite` there to keep your history, or remove `db_path`.
 
 ## 0.4.0
 
