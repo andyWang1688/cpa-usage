@@ -40,6 +40,69 @@ func TestCostCategories(t *testing.T) {
 	}
 }
 
+func TestDevinCacheWritePricing(t *testing.T) {
+	const model = "devin/claude-fable-5-2"
+	p := modelPrice{tokenPrice: tokenPrice{Input: rate(8), Output: rate(40), CacheRead: rate(.2), CacheWrite: rate(10)}}
+	cases := []struct {
+		name, provider, executor      string
+		input, output, read, creation int64
+		wantInput                     int64
+		wantCost                      float64
+	}{
+		{"legacy mixed usage", "devin", "DevinExecutor", 602407, 17257, 602403, 5960, 608367, .8703926},
+		{"legacy first write", "devin", "DevinExecutor", 4, 10, 0, 50, 54, .000932},
+		{"current inclusive usage", "devin", "DevinExecutor", 608367, 17257, 602403, 5960, 608367, .8703926},
+		{"unknown provider", "other", "OtherExecutor", 602407, 17257, 602403, 5960, 602407, -1},
+		{"explicit alternate executor", "devin", "OpenAICompatExecutor", 602407, 17257, 602403, 5960, 602407, -1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			openDB(filepath.Join(t.TempDir(), "pricing.sqlite"))
+			addVersion(t, 1, map[string]modelPrice{}, map[string]modelPrice{priceKey(tc.provider, model): p})
+			payload, err := json.Marshal(map[string]any{"result": map[string]any{
+				"Provider": tc.provider, "ExecutorType": tc.executor, "Model": model, "Source": "fixture",
+				"RequestedAt": "2026-09-10T11:30:00+08:00",
+				"Detail": map[string]int64{
+					"InputTokens": tc.input, "OutputTokens": tc.output, "CacheReadTokens": tc.read,
+					"CacheCreationTokens": tc.creation, "TotalTokens": tc.input + tc.output,
+				},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := handleMethod("usage.handle", payload); err != nil {
+				t.Fatal(err)
+			}
+			status, _, body := callMgmt(t, "/v0/management/plugins/usage-report/api/usage", "GET")
+			if status != 200 {
+				t.Fatalf("HTTP %d: %s", status, body)
+			}
+			var response struct {
+				Events  []outEvent
+				Buckets []outBucket
+			}
+			if err := json.Unmarshal(body, &response); err != nil {
+				t.Fatal(err)
+			}
+			if len(response.Events) != 1 || len(response.Buckets) != 1 {
+				t.Fatalf("expected one event and bucket: %s", body)
+			}
+			event, bucket := response.Events[0], response.Buckets[0]
+			if event.Input != tc.wantInput || bucket.Input != tc.wantInput {
+				t.Errorf("event/bucket input = %d/%d, want %d", event.Input, bucket.Input, tc.wantInput)
+			}
+			if tc.wantCost < 0 {
+				if event.CostStatus != "unpriced" || event.Cost != nil || bucket.Unpriced != 1 {
+					t.Fatalf("inconsistent counters should remain unpriced: %s", body)
+				}
+				return
+			}
+			assertCost(t, event.Cost, tc.wantCost)
+			assertCost(t, bucket.Cost, tc.wantCost)
+		})
+	}
+}
+
 func TestCatalogAndContextTiers(t *testing.T) {
 	prices, err := parseCatalog([]byte(`{"test-model":{"mode":"chat","input_cost_per_token":0.000002,"output_cost_per_token":0.000008,"cache_read_input_token_cost":0,"input_cost_per_token_above_200k_tokens":0.000004,"output_cost_per_token_above_200k_tokens":0.000016},"image-model":{"mode":"image_generation","input_cost_per_token":1,"output_cost_per_token":1}}`))
 	if err != nil {

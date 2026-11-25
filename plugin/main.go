@@ -63,6 +63,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -298,13 +299,13 @@ func handleUsage(req []byte) {
 		ts = time.Now()
 	}
 	tokens := map[string]int64{
-		"input_tokens":           u.Detail.InputTokens,
-		"output_tokens":          u.Detail.OutputTokens,
-		"reasoning_tokens":       u.Detail.ReasoningTokens,
-		"cached_tokens":          u.Detail.CachedTokens,
-		"cache_read_tokens":      u.Detail.CacheReadTokens,
-		"cache_creation_tokens":  u.Detail.CacheCreationTokens,
-		"total_tokens":           u.Detail.TotalTokens,
+		"input_tokens":          u.Detail.InputTokens,
+		"output_tokens":         u.Detail.OutputTokens,
+		"reasoning_tokens":      u.Detail.ReasoningTokens,
+		"cached_tokens":         u.Detail.CachedTokens,
+		"cache_read_tokens":     u.Detail.CacheReadTokens,
+		"cache_creation_tokens": u.Detail.CacheCreationTokens,
+		"total_tokens":          u.Detail.TotalTokens,
 	}
 	source := u.Source
 	if source == "" {
@@ -629,9 +630,7 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 					cache = cached
 				}
 				reasoning = toI64(t["reasoning_tokens"])
-				if addInputCache(e, input, output, cache, creation, reasoning) {
-					input += cache + creation
-				}
+				input += inputCacheAdjustment(e, input, output, cache, creation, reasoning)
 			}
 			event := outEvent{
 				Ts: ts, Model: model, Key: anonKey(source),
@@ -694,35 +693,46 @@ func usageResponse(q map[string][]string) ([]byte, error) {
 	return json.Marshal(resp)
 }
 
-func addInputCache(e dbEvent, input, output, cache, creation, reasoning int64) bool {
+func inputCacheAdjustment(e dbEvent, input, output, cache, creation, reasoning int64) int64 {
 	cachedInput := cache + creation
 	if cachedInput <= 0 {
-		return false
+		return 0
 	}
 	total := toI64(e.Tokens["total_tokens"])
-	// An inclusive total must never receive cache a second time.
-	if total > 0 && total == input+output {
-		return false
-	}
 	provider := strings.ToLower(strings.TrimSpace(e.Provider))
 	executor := strings.ToLower(strings.TrimSpace(e.ExecutorType))
+	if total > 0 && total == input+output {
+		// Old Devin reports included reads in input and reported writes separately.
+		// When both already fit inside input, the old and new formats are ambiguous.
+		if provider == "devin" && (executor == "" || executor == "devinexecutor") &&
+			cache >= 0 && cache <= input && creation > input-cache && input <= math.MaxInt64-creation {
+			return creation
+		}
+		return 0
+	}
 	if executor == "openaicompatexecutor" || provider == "openai-compatibility" || strings.HasPrefix(provider, "openai-compatible-") {
-		return false
+		return 0
 	}
 	protocol := provider + " " + executor
 	if strings.Contains(protocol, "claude") || strings.Contains(protocol, "anthropic") {
-		return total == 0 || total == input+output+cachedInput
+		if total == 0 || total == input+output+cachedInput {
+			return cachedInput
+		}
+		return 0
 	}
 	if provider != "" || executor != "" {
-		return false
+		return 0
 	}
 	// Old rows have no protocol identity. Only repair counts that cannot be
 	// an input subset; total equality alone also matches Gemini reasoning.
 	if cachedInput <= input {
-		return false
+		return 0
 	}
-	return (total == 0 && input == 0) ||
-		(total == input+output+cachedInput && total != input+output+reasoning)
+	if (total == 0 && input == 0) ||
+		(total == input+output+cachedInput && total != input+output+reasoning) {
+		return cachedInput
+	}
+	return 0
 }
 
 func parseAnyTime(s string) (float64, error) {
