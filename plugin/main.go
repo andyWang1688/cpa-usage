@@ -218,7 +218,7 @@ func applyConfig(req []byte) {
 	if path == "" {
 		return
 	}
-	if strings.HasPrefix(path, "~") {
+	if strings.HasPrefix(path, "~/") {
 		if u, err := user.Current(); err == nil {
 			path = filepath.Join(u.HomeDir, path[2:])
 		}
@@ -250,11 +250,13 @@ func defaultDBPath() string {
 func openDB(path string) {
 	mu.Lock()
 	defer mu.Unlock()
+	openDBLocked(path)
+}
+
+func openDBLocked(path string) {
 	if db != nil && path != "" && lastOpened == path {
+		lastErr = ""
 		return
-	}
-	if db != nil {
-		_ = db.Close()
 	}
 	// SQLite does not create missing parent directories.
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -275,6 +277,9 @@ func openDB(path string) {
 		_ = conn.Close()
 		return
 	}
+	if db != nil {
+		_ = db.Close()
+	}
 	db = conn
 	lastOpened = path
 	lastErr = ""
@@ -283,8 +288,10 @@ func openDB(path string) {
 var lastOpened string
 
 func ensureDB() {
+	mu.Lock()
+	defer mu.Unlock()
 	if db == nil {
-		openDB(defaultDBPath())
+		openDBLocked(defaultDBPath())
 	}
 }
 
