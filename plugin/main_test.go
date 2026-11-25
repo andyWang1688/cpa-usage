@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -148,6 +149,36 @@ func TestOpenDBCreatesParentDir(t *testing.T) {
 	openDB(path)
 	if lastOpened != path || lastErr != "" {
 		t.Fatalf("got %q, err %q", lastOpened, lastErr)
+	}
+}
+
+func TestOpenDBKeepsActiveDBOnFailure(t *testing.T) {
+	root := t.TempDir()
+	active := filepath.Join(root, "active.sqlite")
+	openDB(active)
+	if _, err := db.Exec("INSERT INTO usage_events (ts, dedup) VALUES ('2026-09-10', 'existing')"); err != nil {
+		t.Fatal(err)
+	}
+
+	blocked := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	next := filepath.Join(blocked, "usage.sqlite")
+	openDB(next)
+	if lastOpened != active || lastErr == "" {
+		t.Fatalf("after failed switch, path=%q err=%q", lastOpened, lastErr)
+	}
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM usage_events WHERE dedup = 'existing'").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("existing DB is unusable: count=%d, err=%v", count, err)
+	}
+	if err := os.Remove(blocked); err != nil {
+		t.Fatal(err)
+	}
+	openDB(next)
+	if lastOpened != next || lastErr != "" {
+		t.Fatalf("after retry, path=%q err=%q", lastOpened, lastErr)
 	}
 }
 
